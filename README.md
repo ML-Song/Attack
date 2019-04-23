@@ -14,13 +14,15 @@
 
 - UNet
   
-$$ Original_Image -> UNet -> Noise $$  
+```
+Original_Image -> UNet -> Noise
   
-$$ Noise + Original_Image -> Noise_Image $$  
+Noise + Original_Image -> Noise_Image  
   
-$$ Noise_Image -> Classifier -> out $$  
+Noise_Image -> Classifier -> out  
   
-$$ loss = KL(out, Uniform_Distribution) + beta * MAE(Noise) $$  
+loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)  
+```
 
 ## Parameter
 
