@@ -14,28 +14,29 @@
 
 - UNet
 
-$$Original_Image -> UNet -> Noise$$
+$$ Original_Image -> UNet -> Noise$$  
 
-$$Noise + Original_Image -> Noise_Image$$
+$$ Noise + Original_Image -> Noise_Image$$  
 
-$$Noise_Image -> Classifier -> out$$
+$$ Noise_Image -> Classifier -> out$$  
 
-$$loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)$$
+$$ loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)$$  
 
 ## Parameter
 
-- beta 
+- beta   
+
   weight of loss min noise
 
 ## 目录结构
 
-+-- models
-|   +-- tf_to_pytorch_inception_v1.pth
-|   +-- f_to_pytorch_inception_v1.py
-|
-+-- dev_data
-|   +-- xxx.png
-|   +-- dev.csv
-|
-+-- train.py
-+-- unet.py
++-- models  
+|   +-- tf_to_pytorch_inception_v1.pth  
+|   +-- f_to_pytorch_inception_v1.py  
+|  
++-- dev_data  
+|   +-- xxx.png  
+|   +-- dev.csv  
+|  
++-- train.py  
++-- unet.py  
