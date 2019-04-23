@@ -87,7 +87,7 @@ class ImageListFolder(torch.utils.data.Dataset):
 if __name__ == '__main__':
     max_epoch = 30
     with_target = False
-    beta = 20
+    beta = 8
     batch_size = 32
     num_classes = 110
     checkpoint_dir = 'saved_models'
@@ -145,38 +145,43 @@ if __name__ == '__main__':
                 out = pretrained_model(batch_x_with_noise)
                 out = torch.log_softmax(out, dim=1)
                 loss_cls = criterion_cls(out, batch_target)
-                loss_min_noise = torch.abs(noise).mean()
+                loss_min_noise = torch.sqrt((noise ** 2).mean())
+#                 loss_min_noise = torch.abs(noise).mean()
                 loss = (loss_cls + beta * loss_min_noise) / (1 + beta)
                 loss.backward()
                 optim.step()
                 scheduler.step(loss.data)
                 writer.add_scalar('loss_cls', loss_cls.data, global_step=step)
                 writer.add_scalar('loss_min_noise', loss_min_noise.data, global_step=step)
+                writer.add_scalar('loss', loss.data, global_step=step)
                 writer.add_scalar('lr', optim.param_groups[0]['lr'], global_step=step)
                 step += 1
             attack_net.eval()
             with torch.no_grad():
+                right_num = 0
+                score = 0
                 gt = []
-#                 targets = []
                 predictions = []
                 for i, batch_data in tqdm.tqdm(enumerate(testing_data_loader)):
                     batch_x = batch_data[0].cuda()
                     batch_y = batch_data[1]
-#                     batch_target = batch_data[2]
                     noise = attack_net(batch_x)
                     batch_x_with_noise = batch_x + noise
-                    out = pretrained_model(batch_x_with_noise)
+                    out = pretrained_model(batch_x_with_noise).detach().cpu()
                     gt.append(batch_y)
-#                     targets.append(batch_target)
-                    predictions.append(out.argmax(dim=1).detach().cpu())
+                    predictions.append(out.argmax(dim=1))
+                    right_index = out.argmax(dim=1) == batch_y
+                    wrong_index = out.argmax(dim=1) != batch_y
+                    right_num += right_index.sum()
+                    score += torch.sqrt(((noise.detach().cpu()[wrong_index] * 128) ** 2).mean()) * wrong_index.sum()
                 gt = torch.cat(gt).numpy()
-#                 targets = torch.cat(targets).numpy()
                 predictions = torch.cat(predictions).numpy()
+                score += right_num * 128
+                score /= len(test_set)
                 
-#                 target_acc = metrics.accuracy_score(predictions, targets)
-#                 writer.add_scalar('target acc', target_acc, global_step=epoch)
                 acc = metrics.accuracy_score(predictions, gt)
                 writer.add_scalar('acc', acc, global_step=epoch)
+                writer.add_scalar('score', score, global_step=epoch)
             if best_acc > acc:
                 best_acc = acc
                 torch.save(attack_net.state_dict(), '{}/best_{}.pt'.format(checkpoint_dir, comment))

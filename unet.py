@@ -56,7 +56,10 @@ class UNet(nn.Module):
             )
             prev_channels = 2 ** (wf + i)
 
-        self.last = nn.Conv2d(prev_channels, n_classes, kernel_size=1)
+        self.last = nn.Sequential(
+            nn.Conv2d(prev_channels, n_classes, kernel_size=1)
+#             nn.Tanh()
+        )
 
     def forward(self, x):
         n, c, h, w = x.shape
