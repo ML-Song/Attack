@@ -34,7 +34,7 @@ loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)
 
 +-- models  
 |   +-- tf_to_pytorch_inception_v1.pth  
-|   +-- f_to_pytorch_inception_v1.py  
+|   +-- tf_to_pytorch_inception_v1.py  
 |  
 +-- dev_data  
 |   +-- xxx.png  
