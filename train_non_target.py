@@ -87,7 +87,7 @@ class ImageListFolder(torch.utils.data.Dataset):
 if __name__ == '__main__':
     max_epoch = 200
     with_target = False
-    beta = 3
+    beta = 8
     batch_size = 32
     num_classes = 110
     checkpoint_dir = 'saved_models'
@@ -124,7 +124,7 @@ if __name__ == '__main__':
                                          shuffle=True, drop_last=False)
 
     criterion_cls = nn.KLDivLoss(reduction='batchmean')
-    optim = torch.optim.Adam(attack_net.parameters(), lr=1e-1, weight_decay=5e-3)
+    optim = torch.optim.SGD(attack_net.parameters(), lr=1e-2, weight_decay=5e-3, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim, 'min', verbose=True, patience=50, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):
