@@ -21,7 +21,7 @@ Noise + Original_Image -> Noise_Image
   
 Noise_Image -> Classifier -> out  
   
-loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)  
+loss = CrossEntropyLoss(out, target_label)  
 ```
 
 ## Parameter
@@ -40,5 +40,6 @@ loss = KL(out, Uniform_Distribution) + beta * MAE(Noise)
 |   +-- xxx.png  
 |   +-- dev.csv  
 |  
-+-- train.py  
++-- train_target.py  
++-- train_non_target.py  
 +-- unet.py  
