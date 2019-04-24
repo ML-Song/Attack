@@ -126,7 +126,7 @@ if __name__ == '__main__':
     criterion_cls = nn.CrossEntropyLoss()
     optim = torch.optim.SGD(attack_net.parameters(), lr=1e-2, weight_decay=5e-3, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optim, 'min', verbose=True, patience=50, factor=0.2, threshold=5e-3)
+        optim, 'min', verbose=True, patience=20, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
     with SummaryWriter(comment=comment) as writer:
@@ -154,7 +154,7 @@ if __name__ == '__main__':
                 loss = (loss_cls + beta * loss_min_noise) / (1 + beta)
                 loss.backward()
                 optim.step()
-                scheduler.step(loss.data)
+                
                 writer.add_scalar('loss_cls', loss_cls.data, global_step=step)
                 writer.add_scalar('loss_min_noise', loss_min_noise.data, global_step=step)
                 writer.add_scalar('loss', loss.data, global_step=step)
@@ -191,7 +191,7 @@ if __name__ == '__main__':
                 predictions = torch.cat(predictions).numpy()
                 score += right_num * 128
                 score /= len(test_set)
-                
+                scheduler.step(score)
                 acc = metrics.accuracy_score(predictions, gt)
                 writer.add_scalar('acc', acc, global_step=epoch)
                 writer.add_scalar('score', score, global_step=epoch)
