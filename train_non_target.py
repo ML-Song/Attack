@@ -137,12 +137,17 @@ if __name__ == '__main__':
             for i, batch_data in tqdm.tqdm(enumerate(testing_data_loader)):
                 batch_x = batch_data[0].cuda()
                 batch_y = batch_data[1].cuda()
-                batch_target = torch.ones((batch_y.size(0), num_classes)).cuda() / num_classes
+#                 batch_target = torch.ones((batch_y.size(0), num_classes)).cuda() / (num_classes)
+                batch_target_one_hot = torch.FloatTensor(batch_y.size(0), num_classes).cuda()
+                batch_target_one_hot.zero_()
+                batch_target_one_hot.scatter_(1, batch_y.view(-1, 1), 1)
+                batch_target = batch_target_one_hot
                 optim.zero_grad()
                 noise = attack_net(batch_x)
                 batch_x_with_noise = batch_x + noise
                 out = pretrained_model(batch_x_with_noise)
-                out = torch.log_softmax(out, dim=1)
+                out = 1 - torch.softmax(out, dim=1)
+                out = torch.log(out)
                 loss_cls = criterion_cls(out, batch_target)
                 loss_min_noise = torch.sqrt((noise ** 2).mean())
 #                 loss_min_noise = torch.abs(noise).mean()
