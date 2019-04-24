@@ -85,9 +85,9 @@ class ImageListFolder(torch.utils.data.Dataset):
     
     
 if __name__ == '__main__':
-    max_epoch = 30
+    max_epoch = 200
     with_target = False
-    beta = 8
+    beta = 3
     batch_size = 32
     num_classes = 110
     checkpoint_dir = 'saved_models'
@@ -106,7 +106,7 @@ if __name__ == '__main__':
     model_dimension = 224
     center_crop = 224
     data_transform = transforms.Compose([
-        transforms.Scale(model_dimension),
+        transforms.Resize(model_dimension),
         transforms.CenterCrop(center_crop),
         transforms.ToTensor(),
         normalize,
@@ -116,7 +116,7 @@ if __name__ == '__main__':
     pretrained_model = pretrained_model.cuda()
     pretrained_model.eval()
     pretrained_model.volatile = True
-
+    
     attack_net = unet.UNet(3, 3, batch_norm=True).cuda()
 
     test_set = ImageListFolder(root='dev_data/', transform=data_transform)
@@ -124,9 +124,9 @@ if __name__ == '__main__':
                                          shuffle=True, drop_last=False)
 
     criterion_cls = nn.KLDivLoss(reduction='batchmean')
-    optim = torch.optim.Adam(attack_net.parameters(), lr=1e-2, weight_decay=5e-3)
+    optim = torch.optim.Adam(attack_net.parameters(), lr=1e-1, weight_decay=5e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optim, 'min', verbose=True, patience=100, factor=0.2, threshold=5e-3)
+        optim, 'min', verbose=True, patience=50, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
     with SummaryWriter(comment=comment) as writer:
@@ -138,7 +138,6 @@ if __name__ == '__main__':
                 batch_x = batch_data[0].cuda()
                 batch_y = batch_data[1].cuda()
                 batch_target = torch.ones((batch_y.size(0), num_classes)).cuda() / num_classes
-#                 batch_target = batch_data[2].cuda()
                 optim.zero_grad()
                 noise = attack_net(batch_x)
                 batch_x_with_noise = batch_x + noise
@@ -173,7 +172,8 @@ if __name__ == '__main__':
                     right_index = out.argmax(dim=1) == batch_y
                     wrong_index = out.argmax(dim=1) != batch_y
                     right_num += right_index.sum()
-                    score += torch.sqrt(((noise.detach().cpu()[wrong_index] * 128) ** 2).mean()) * wrong_index.sum()
+                    if wrong_index.sum() > 0:
+                        score += torch.sqrt((((batch_x_with_noise - batch_x).detach().cpu()[wrong_index] * 128) ** 2).mean()) * wrong_index.sum()
                 gt = torch.cat(gt).numpy()
                 predictions = torch.cat(predictions).numpy()
                 score += right_num * 128
