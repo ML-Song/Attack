@@ -1,8 +1,8 @@
 #coding=utf-8
-with_target = False
+with_target = True
 with_transform = True
 beta = 8
-devices = [3]
+devices = [2, 3]
 
 
 max_epoch = 300

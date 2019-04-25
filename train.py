@@ -123,7 +123,7 @@ if __name__ == '__main__':
                 
                 loss_min_noise = criterion_min_noise(batch_x_with_noise, batch_x)
                 if with_target:
-                    loss_cls_target = sum([criterion_cls_target(out) for out in outs]) / len(outs)
+                    loss_cls_target = sum([criterion_cls_target(out, batch_y) for out in outs]) / len(outs)
                     loss = (loss_cls_target + beta * loss_min_noise) / (1 + beta)
                     writer.add_scalar('loss_cls_target', loss_cls_target.data, global_step=step)
                 else:
