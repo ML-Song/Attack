@@ -13,86 +13,18 @@ import torchvision.transforms as transforms
 from matplotlib import pyplot as plt
 
 import unet
+from dataset import image_from_json, image_list_folder
 
 
-class ImageListFolder(torch.utils.data.Dataset):
-    """A generic data loader where the images are arranged in this way: ::
-
-        root/dog/xxx.png
-        root/dog/xxy.png
-        root/dog/xxz.png
-
-        root/cat/123.png
-        root/cat/nsdf3.png
-        root/cat/asd932_.png
-
-    Args:
-        root (string): Root directory path.
-        transform (callable, optional): A function/transform that  takes in an PIL image
-            and returns a transformed version. E.g, ``transforms.RandomCrop``
-        target_transform (callable, optional): A function/transform that takes in the
-            target and transforms it.
-        loader (callable, optional): A function to load an image given its path.
-
-     Attributes:
-        classes (list): List of the class names.
-        class_to_idx (dict): Dict with items (class_name, class_index).
-        imgs (list): List of (image path, class_index) tuples
-    """
-
-    def __init__(self, root, transform=None, target_transform=None,
-                 loader=default_loader):
-        images = []
-        print(root)
-        with open(os.path.join(root, 'dev.csv'), 'r') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                filepath = os.path.join(root, row['filename'])
-                truelabel = int(row['trueLabel'])
-                tragetedlabel = int(row['targetedLabel'])
-                item = (filepath, truelabel, tragetedlabel)
-                images.append(item)
-
-        if len(images) == 0:
-            raise(RuntimeError("Found 0 images in subfolders of: " + root + "\n"
-                               "Supported image extensions are: " + ",".join(IMG_EXTENSIONS)))
-
-        self.root = root
-        self.imgs = images
-        self.transform = transform
-        self.target_transform = target_transform
-        self.loader = loader
-
-    def __getitem__(self, index):
-        """
-        Args:
-            index (int): Index
-
-        Returns:
-            tuple: (image, target) where target is class_index of the target class.
-        """
-        path, target, attacked_target = self.imgs[index]
-        img = self.loader(path)
-        if self.transform is not None:
-            img = self.transform(img)
-        if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return img, target, attacked_target
-
-    def __len__(self):
-        return len(self.imgs)
-    
-    
 if __name__ == '__main__':
     max_epoch = 200
     with_target = True
-    beta = 8
-    batch_size = 16
+    beta = 3
+    batch_size = 28
     num_classes = 110
     interval = 10
     checkpoint_dir = 'saved_models'
-    devices = [3]
+    devices = [2]
     comment = 'model: {}, with_target: {}, beta: {}'.format('UNet', with_target, beta)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
     
@@ -106,7 +38,14 @@ if __name__ == '__main__':
 
     model_dimension = 224
     center_crop = 224
-    data_transform = transforms.Compose([
+    train_transform = transforms.Compose([
+        transforms.Resize(model_dimension),
+        transforms.CenterCrop(center_crop),
+        transforms.ToTensor(),
+        normalize,
+    ])
+    
+    test_transform = transforms.Compose([
         transforms.Resize(model_dimension),
         transforms.CenterCrop(center_crop),
         transforms.ToTensor(),
@@ -120,9 +59,13 @@ if __name__ == '__main__':
     
     attack_net = unet.UNet(3, 3 * num_classes, batch_norm=True).cuda()
 
-    test_set = ImageListFolder(root='dev_data/', transform=data_transform)
-    testing_data_loader = torch.utils.data.DataLoader(dataset=test_set, num_workers=4, batch_size=batch_size,
-                                         shuffle=True, drop_last=False)
+    train_dataset = image_from_json.ImageDataSet('data/IJCAI_2019_AAAC_train/info.json', transform=train_transform)
+    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, 5000)
+    train_loader = torch.utils.data.DataLoader(train_dataset, num_workers=16, batch_size=batch_size, sampler=train_sampler)
+    
+    test_dataset = image_list_folder.ImageListFolder(root='dev_data/', transform=test_transform)
+    test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=batch_size, 
+                                              shuffle=True, drop_last=False)
 
     criterion_cls = nn.CrossEntropyLoss()
     optim = torch.optim.SGD(attack_net.parameters(), lr=1e-2, weight_decay=5e-4, momentum=0.9)
@@ -135,10 +78,14 @@ if __name__ == '__main__':
         best_acc = 1
         for epoch in range(max_epoch):
             attack_net.train()
-            for i, batch_data in tqdm.tqdm(enumerate(testing_data_loader)):
+            for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
                 batch_x = batch_data[0].cuda()
-                batch_y = batch_data[2].cuda()
                 n, c, h, w = batch_x.shape
+                if len(batch_data) == 3: 
+                    batch_y = batch_data[2].cuda()
+                else:
+                    batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64).cuda()
+                
 #                 batch_target = batch_data[2].type(torch.float32).cuda()
 #                 batch_target = batch_target.view(-1, 1, 1, 1)
 #                 batch_target = batch_target.repeat(1, 1, h, w) / num_classes
@@ -169,10 +116,12 @@ if __name__ == '__main__':
                 predictions = []
                 original_images = []
                 noise_images = []
-                for i, batch_data in tqdm.tqdm(enumerate(testing_data_loader)):
+                for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
                     batch_x = batch_data[0].cuda()
-                    batch_y = batch_data[2]
-                    
+                    if len(batch_data) == 3: 
+                        batch_y = batch_data[2]
+                    else:
+                        batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64)
 #                     batch_target = batch_data[2].type(torch.float32).cuda()
 #                     batch_target = batch_target.view(-1, 1, 1, 1)
 #                     batch_target = batch_target.repeat(1, 1, h, w) / num_classes
