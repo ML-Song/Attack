@@ -1,5 +1,5 @@
 #coding=utf-8
-with_target = True
+with_target = False
 beta = 8
 devices = [3]
 
