@@ -32,7 +32,6 @@ class ImageListFolder(torch.utils.data.Dataset):
     def __init__(self, root, transform=None, target_transform=None,
                  loader=default_loader):
         images = []
-        print(root)
         with open(os.path.join(root, 'dev.csv'), 'r') as f:
             reader = csv.DictReader(f)
             for row in reader:
