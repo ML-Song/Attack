@@ -96,7 +96,7 @@ if __name__ == '__main__':
         os.mkdir(checkpoint_dir)
     with SummaryWriter(comment=comment) as writer:
         step = 0
-        best_score = 255
+        best_score = 255.
         for epoch in range(max_epoch):
             attack_net_single.train()
             for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
@@ -191,8 +191,8 @@ if __name__ == '__main__':
                 predictions = np.concatenate(predictions, axis=-1)
                 scores = [(s + r * 128) / len(test_dataset) for s, r in zip(scores, right_nums)]
                 
-                score_mean = sum(scores) / len(scores)
-                scheduler.step(float(score_mean))
+                score_mean = float(sum(scores) / len(scores))
+                scheduler.step(score_mean)
                 
                 accs = [metrics.accuracy_score(p, gt) for p in predictions]
                 
