@@ -40,6 +40,13 @@ loss = CrossEntropyLoss(out, target_label)
 |   +-- xxx.png  
 |   +-- dev.csv  
 |  
++-- data  
+|   +-- IJCAI_2019_AAAC_train  
+|      +-- 00000  
+|         +-- xxx.jpg  
++-- dataset  
+|   +-- image_from_json.py  
+|   +-- image_list_folder.py  
 +-- train_target.py  
 +-- train_non_target.py  
 +-- unet.py  
