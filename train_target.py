@@ -152,7 +152,7 @@ if __name__ == '__main__':
                     noise_images, normalize=True, scale_each=True)
                 
                 score += right_num * 128
-                score /= len(test_set)
+                score /= len(test_dataset)
                 scheduler.step(float(score))
                 acc = metrics.accuracy_score(predictions, gt)
                 writer.add_scalar('acc', acc, global_step=epoch)
