@@ -68,6 +68,7 @@ if __name__ == '__main__':
                                               shuffle=True, drop_last=False)
 
     criterion_cls = nn.KLDivLoss(reduction='batchmean')
+    criterion_min_noise = nn.MSELoss()
     optim = torch.optim.SGD(attack_net.parameters(), lr=1e-2, weight_decay=5e-4, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim, 'min', verbose=True, patience=20, factor=0.2, threshold=5e-3)
@@ -93,7 +94,8 @@ if __name__ == '__main__':
                 out = 1 - torch.softmax(out, dim=1)
                 out = torch.log(out)
                 loss_cls = criterion_cls(out, batch_target)
-                loss_min_noise = torch.sqrt((noise ** 2).mean())
+                loss_min_noise = criterion_min_noise(noise, torch.zeros_like(noise, device=noise.device))
+                #torch.sqrt((noise ** 2).mean())
 #                 loss_min_noise = torch.abs(noise).mean()
                 loss = (loss_cls + beta * loss_min_noise) / (1 + beta)
                 loss.backward()
