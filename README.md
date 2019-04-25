@@ -47,8 +47,8 @@ loss = CrossEntropyLoss(out, target_label)
 +-- dataset  
 |   +-- image_from_json.py  
 |   +-- image_list_folder.py  
-+-- train_target.py  
-+-- train_non_target.py  
++-- train.py  
++-- config.py  
 +-- unet.py  
 ```
 ## Results
