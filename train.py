@@ -95,8 +95,8 @@ if __name__ == '__main__':
 
                 batch_x_with_noise = batch_x + noise
                 
-                batch_x_with_noise = float32_to_uint8(batch_x_with_noise)
-                batch_x_with_noise = uint8_to_float32(batch_x_with_noise)
+#                 batch_x_with_noise = float32_to_uint8(batch_x_with_noise)
+#                 batch_x_with_noise = uint8_to_float32(batch_x_with_noise)
 
                 out = pretrained_model(batch_x_with_noise)
                 
