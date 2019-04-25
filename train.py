@@ -19,15 +19,16 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_dir = 'saved_models'
     comment = 'model: {}, with_target: {}, beta: {}, with_transform: {}'.format('UNet', with_target, beta, with_transform)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
     
-    model_names = ['tf_to_pytorch_inception_v1', 'tf_to_pytorch_resnet_v1_50', 'tf_to_pytorch_vgg16']
     pretrained_models = []
     for name in model_names:
         MainModel = imp.load_source('MainModel', "models/{}.py".format(name))
-        pretrained_models.append(torch.load('models/{}.pth'.format(name)))
+        pretrained_model = torch.load('models/{}.pth'.format(name)).cpu()
+        if len(devices) > 1:
+            pretrained_model = nn.DataParallel(pretrained_model, device_ids=range(len(devices))).cuda()
+        pretrained_models.append(pretrained_model)
 
     mean_arr = [0.5, 0.5, 0.5]
     stddev_arr = [0.5, 0.5, 0.5]
@@ -45,6 +46,7 @@ if __name__ == '__main__':
         ])
     else:
         data_augmentation = tv.transforms.Compose([])
+        
     train_transform = transforms.Compose([
         data_augmentation, 
         transforms.Resize(model_dimension),
@@ -77,7 +79,7 @@ if __name__ == '__main__':
         attack_net = nn.DataParallel(attack_net_single, device_ids=range(len(devices))).cuda()
 
     train_dataset = image_from_json.ImageDataSet('data/IJCAI_2019_AAAC_train/info.json', transform=train_transform)
-    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, num_classes * 5)
+    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, num_classes * epoch_size)
     train_loader = torch.utils.data.DataLoader(train_dataset, num_workers=16, batch_size=batch_size, sampler=train_sampler)
     
     test_dataset = image_list_folder.ImageListFolder(root='dev_data/', transform=test_transform)
@@ -94,7 +96,7 @@ if __name__ == '__main__':
         os.mkdir(checkpoint_dir)
     with SummaryWriter(comment=comment) as writer:
         step = 0
-        best_score = 1
+        best_score = 255
         for epoch in range(max_epoch):
             attack_net_single.train()
             for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
@@ -117,9 +119,7 @@ if __name__ == '__main__':
                 
 #                 batch_x_with_noise = float32_to_uint8(batch_x_with_noise)
 #                 batch_x_with_noise = uint8_to_float32(batch_x_with_noise)
-                outs = []
-                for pretrained_model in pretrained_models:
-                    outs.append(pretrained_model(batch_x_with_noise))
+                outs = [pretrained_model(batch_x_with_noise) for pretrained_model in pretrained_models]
                 
                 loss_min_noise = criterion_min_noise(batch_x_with_noise, batch_x)
                 if with_target:
