@@ -50,8 +50,10 @@ if __name__ == '__main__':
     pretrained_model = pretrained_model.cuda()
     pretrained_model.eval()
     pretrained_model.volatile = True
-    
-    attack_net = unet.UNet(3, 3 * num_classes, batch_norm=True).cuda()
+    if with_target:
+        attack_net = unet.UNet(3, 3 * num_classes, batch_norm=True).cuda()
+    else:
+        attack_net = unet.UNet(3, 3, batch_norm=True).cuda()
 
     train_dataset = image_from_json.ImageDataSet('data/IJCAI_2019_AAAC_train/info.json', transform=train_transform)
     train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, num_classes * 5)
@@ -74,21 +76,22 @@ if __name__ == '__main__':
         best_acc = 1
         for epoch in range(max_epoch):
             attack_net.train()
-            for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
+            for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
                 batch_x = batch_data[0].cuda()
                 n, c, h, w = batch_x.shape
+                
+                optim.zero_grad()
+                noise = attack_net(batch_x)
                 if with_target:
                     if len(batch_data) == 3: 
                         batch_y = batch_data[2].cuda()
                     else:
                         batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64).cuda()
+                    noise = noise.view(n, -1, c, h, w)
+                    noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
                 else:
                     batch_y = batch_data[1].cuda()
-                    
-                optim.zero_grad()
-                noise = attack_net(batch_x)
-                noise = noise.view(n, -1, c, h, w)
-                noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
+
                 batch_x_with_noise = batch_x + noise
                 out = pretrained_model(batch_x_with_noise)
                 
@@ -120,17 +123,17 @@ if __name__ == '__main__':
                 for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
                     batch_x = batch_data[0].cuda()
                     n, c, h, w = batch_x.shape
+                    noise = attack_net(batch_x)
                     if with_target:
                         if len(batch_data) == 3: 
                             batch_y = batch_data[2]
                         else:
                             batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64)
+                        noise = noise.view(n, -1, c, h, w)
+                        noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
                     else:
                         batch_y = batch_data[1]
-                    
-                    noise = attack_net(batch_x)
-                    noise = noise.view(n, -1, c, h, w)
-                    noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
+
                     batch_x_with_noise = batch_x + noise
                     out = pretrained_model(batch_x_with_noise).detach().cpu()
                     gt.append(batch_y)
