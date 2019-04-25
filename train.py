@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 
 import unet
 from config import *
+from utils.float32_to_uint8 import float32_to_uint8
 from dataset import image_from_json, image_list_folder
 
 
@@ -93,6 +94,7 @@ if __name__ == '__main__':
                     batch_y = batch_data[1].cuda()
 
                 batch_x_with_noise = batch_x + noise
+                batch_x_with_noise = float32_to_uint8(batch_x_with_noise)
                 out = pretrained_model(batch_x_with_noise)
                 
                 loss_min_noise = criterion_min_noise(batch_x_with_noise, batch_x)
@@ -135,6 +137,7 @@ if __name__ == '__main__':
                         batch_y = batch_data[1]
 
                     batch_x_with_noise = batch_x + noise
+                    batch_x_with_noise = float32_to_uint8(batch_x_with_noise)
                     out = pretrained_model(batch_x_with_noise).detach().cpu()
                     gt.append(batch_y)
                     predictions.append(out.argmax(dim=1))
