@@ -13,18 +13,12 @@ import torchvision.transforms as transforms
 from matplotlib import pyplot as plt
 
 import unet
+from config import *
 from dataset import image_from_json, image_list_folder
 
-    
+
 if __name__ == '__main__':
-    max_epoch = 200
-    with_target = False
-    beta = 3
-    batch_size = 32
-    num_classes = 110
-    interval = 10
     checkpoint_dir = 'saved_models'
-    devices = [3]
     comment = 'model: {}, with_target: {}, beta: {}'.format('UNet', with_target, beta)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
     
@@ -57,19 +51,20 @@ if __name__ == '__main__':
     pretrained_model.eval()
     pretrained_model.volatile = True
     
-    attack_net = unet.UNet(3, 3, batch_norm=True).cuda()
+    attack_net = unet.UNet(3, 3 * num_classes, batch_norm=True).cuda()
 
     train_dataset = image_from_json.ImageDataSet('data/IJCAI_2019_AAAC_train/info.json', transform=train_transform)
-    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, 5000)
+    train_sampler = torch.utils.data.sampler.RandomSampler(train_dataset, True, num_classes * 5)
     train_loader = torch.utils.data.DataLoader(train_dataset, num_workers=16, batch_size=batch_size, sampler=train_sampler)
     
     test_dataset = image_list_folder.ImageListFolder(root='dev_data/', transform=test_transform)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=batch_size, 
                                               shuffle=True, drop_last=False)
 
-    criterion_cls = nn.KLDivLoss(reduction='batchmean')
+    criterion_cls_target = nn.CrossEntropyLoss()
+    criterion_cls_non_target = nn.NLLLoss()
     criterion_min_noise = nn.MSELoss()
-    optim = torch.optim.SGD(attack_net.parameters(), lr=1e-2, weight_decay=5e-4, momentum=0.9)
+    optim = torch.optim.SGD(attack_net.parameters(), lr=lr, weight_decay=5e-3, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim, 'min', verbose=True, patience=20, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):
@@ -79,29 +74,37 @@ if __name__ == '__main__':
         best_acc = 1
         for epoch in range(max_epoch):
             attack_net.train()
-            for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
+            for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
                 batch_x = batch_data[0].cuda()
-                batch_y = batch_data[1].cuda()
-#                 batch_target = torch.ones((batch_y.size(0), num_classes)).cuda() / (num_classes)
-                batch_target_one_hot = torch.FloatTensor(batch_y.size(0), num_classes).cuda()
-                batch_target_one_hot.zero_()
-                batch_target_one_hot.scatter_(1, batch_y.view(-1, 1), 1)
-                batch_target = batch_target_one_hot
+                n, c, h, w = batch_x.shape
+                if with_target:
+                    if len(batch_data) == 3: 
+                        batch_y = batch_data[2].cuda()
+                    else:
+                        batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64).cuda()
+                else:
+                    batch_y = batch_data[1].cuda()
+                    
                 optim.zero_grad()
                 noise = attack_net(batch_x)
+                noise = noise.view(n, -1, c, h, w)
+                noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
                 batch_x_with_noise = batch_x + noise
                 out = pretrained_model(batch_x_with_noise)
-                out = 1 - torch.softmax(out, dim=1)
-                out = torch.log(out)
-                loss_cls = criterion_cls(out, batch_target)
-                loss_min_noise = criterion_min_noise(noise, torch.zeros_like(noise, device=noise.device))
-                #torch.sqrt((noise ** 2).mean())
-#                 loss_min_noise = torch.abs(noise).mean()
-                loss = (loss_cls + beta * loss_min_noise) / (1 + beta)
+                
+                loss_min_noise = criterion_min_noise(batch_x_with_noise, batch_x)
+                if with_target:
+                    loss_cls_target = criterion_cls_target(out, batch_y)
+                    loss = (loss_cls_target + beta * loss_min_noise) / (1 + beta)
+                    writer.add_scalar('loss_cls_target', loss_cls_target.data, global_step=step)
+                else:
+                    out_inverse = torch.log(1 - torch.softmax(out, dim=1))
+                    loss_cls_non_target = criterion_cls_non_target(out_inverse, batch_y)
+                    loss = (loss_cls_non_target + beta * loss_min_noise) / (1 + beta)
+                    writer.add_scalar('loss_cls_non_target', loss_cls_non_target.data, global_step=step)
                 loss.backward()
                 optim.step()
-            
-                writer.add_scalar('loss_cls', loss_cls.data, global_step=step)
+                
                 writer.add_scalar('loss_min_noise', loss_min_noise.data, global_step=step)
                 writer.add_scalar('loss', loss.data, global_step=step)
                 writer.add_scalar('lr', optim.param_groups[0]['lr'], global_step=step)
@@ -116,16 +119,31 @@ if __name__ == '__main__':
                 noise_images = []
                 for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
                     batch_x = batch_data[0].cuda()
-                    batch_y = batch_data[1]
+                    n, c, h, w = batch_x.shape
+                    if with_target:
+                        if len(batch_data) == 3: 
+                            batch_y = batch_data[2]
+                        else:
+                            batch_y = torch.randint(0, num_classes, (batch_x.size(0), ), dtype=torch.int64)
+                    else:
+                        batch_y = batch_data[1]
+                    
                     noise = attack_net(batch_x)
+                    noise = noise.view(n, -1, c, h, w)
+                    noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
                     batch_x_with_noise = batch_x + noise
                     out = pretrained_model(batch_x_with_noise).detach().cpu()
                     gt.append(batch_y)
                     predictions.append(out.argmax(dim=1))
                     original_images.append(batch_x.detach().cpu())
                     noise_images.append(batch_x_with_noise.detach().cpu())
-                    right_index = out.argmax(dim=1) == batch_y
-                    wrong_index = out.argmax(dim=1) != batch_y
+                    if with_target:
+                        right_index = out.argmax(dim=1) != batch_y
+                        wrong_index = out.argmax(dim=1) == batch_y
+                    else:
+                        right_index = out.argmax(dim=1) == batch_y
+                        wrong_index = out.argmax(dim=1) != batch_y
+                        
                     right_num += right_index.sum()
                     if wrong_index.sum() > 0:
                         score += torch.sqrt((((batch_x_with_noise - batch_x).detach().cpu()[wrong_index] * 128) ** 2).mean()) * wrong_index.sum()
