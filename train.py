@@ -77,7 +77,7 @@ if __name__ == '__main__':
         best_acc = 1
         for epoch in range(max_epoch):
             attack_net.train()
-            for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
+            for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
                 batch_x = batch_data[0].cuda()
                 n, c, h, w = batch_x.shape
                 
