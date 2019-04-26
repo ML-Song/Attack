@@ -10,7 +10,7 @@
 - sklearn
 - tensorboardX
 
-## Models
+## Non Targeted Attack Model
 
 - UNet
   
@@ -19,6 +19,19 @@ Original_Image -> UNet -> Noise
   
 Noise + Original_Image -> Noise_Image  
   
+Noise_Image -> Classifier -> out  
+  
+loss = CrossEntropyLoss(out, target_label)  
+```
+ 
+## Targeted Attack Model  
+
+- GAIN  
+```
+Original_Image -> GAIN -> Mask  
+
+Mask * Noise + (1 - Mask) * Original_Image -> Noise_Image
+
 Noise_Image -> Classifier -> out  
   
 loss = CrossEntropyLoss(out, target_label)  
@@ -58,5 +71,4 @@ loss = CrossEntropyLoss(out, target_label)
 
 ## ToDo  
 
-- add transform  
 - add defence model  
