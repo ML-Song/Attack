@@ -50,12 +50,19 @@ if __name__ == '__main__':
     ])
 
     train_dataset = image_from_json.ImageDataSet(
-        'data/IJCAI_2019_AAAC_train/info.json', transform=train_transform)
+        'data/IJCAI_2019_AAAC_train/train_info.json', transform=train_transform)
     train_sampler = torch.utils.data.sampler.RandomSampler(
         train_dataset, True, num_classes * epoch_size)
     train_loader = torch.utils.data.DataLoader(
         train_dataset, num_workers=16, batch_size=batch_size, sampler=train_sampler)
 
+    vali_dataset = image_from_json.ImageDataSet(
+        'data/IJCAI_2019_AAAC_train/vali_info.json', transform=test_transform)
+    vali_sampler = torch.utils.data.sampler.RandomSampler(
+        vali_dataset, True, num_classes * epoch_size)
+    vali_loader = torch.utils.data.DataLoader(
+        vali_dataset, num_workers=16, batch_size=batch_size, sampler=vali_sampler)
+    
     test_dataset = image_list_folder.ImageListFolder(
         root='dev_data/', transform=test_transform)
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=batch_size,
@@ -101,7 +108,7 @@ if __name__ == '__main__':
                 gt = []
                 original_images = []
                 cams = []
-                for i, batch_data in tqdm.tqdm(enumerate(test_loader)):
+                for i, batch_data in tqdm.tqdm(enumerate(vali_loader)):
                     batch_x = batch_data[0].cuda()
                     batch_y = batch_data[1]
                     n, c, h, w = batch_x.shape

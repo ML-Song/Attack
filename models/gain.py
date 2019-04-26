@@ -213,7 +213,8 @@ class GAIN(nn.Module):
     def forward(self, x):
         out, gcam = self.model(x)
         mask = self.softmask(gcam)
-        x_masked = x - (1 - mask)
+        x_mean = x.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+        x_masked = x * (1 - mask) + x_mean * mask
         out_masked, gcam_masked = self.model(x_masked)
         
         return out, out_masked, gcam
