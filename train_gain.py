@@ -105,6 +105,7 @@ if __name__ == '__main__':
             gai_net_single.eval()
             with torch.no_grad():
                 predictions = []
+                predictions_masked = []
                 gt = []
                 original_images = []
                 cams = []
@@ -115,6 +116,7 @@ if __name__ == '__main__':
                     out, out_masked, cam = gai_net(batch_x)
                     gt.append(batch_y)
                     predictions.append(out.argmax(dim=1).detach().cpu())
+                    predictions_masked.append(out_masked.argmax(dim=1).detach().cpu())
                     
                     if epoch % interval == 0:
                         original_images.append(batch_x.detach().cpu())
@@ -122,9 +124,13 @@ if __name__ == '__main__':
 
                 gt = torch.cat(gt).numpy()
                 predictions = torch.cat(predictions).numpy()
+                predictions_masked = torch.cat(predictions_masked).numpy()
                 acc = metrics.accuracy_score(predictions, gt)
-                scheduler.step(acc)
+                acc_masked = metrics.accuracy_score(predictions_masked, gt)
+                acc_gap = acc - acc_masked
+                scheduler.step(acc_gap)
                 writer.add_scalar('acc', acc, global_step=epoch)
+                writer.add_scalar('acc_masked', acc_masked, global_step=epoch)
                 if epoch % interval == 0:
                     original_images = torch.cat(original_images)[: 200]
                     cams = torch.cat(cams)[: 200]
