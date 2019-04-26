@@ -197,7 +197,7 @@ def resnet(model_name, pretrained=False, **kwargs):
 
 
 class SoftMask(nn.Module):
-    def __init__(self, scale=10, threshold=0.5):
+    def __init__(self, scale=10, threshold=0.):
         super().__init__()
         self.scale = scale
         self.threshold = threshold
@@ -218,7 +218,7 @@ class GAIN(nn.Module):
         x_masked = x - (1 - mask)
         out_masked, gcam_masked = self.model(x_masked)
         
-        return out, out_masked, torch.sigmoid(gcam)
+        return out, out_masked, gcam
     
     
 class GAINLoss(nn.Module):
@@ -239,8 +239,9 @@ class GAINLoss(nn.Module):
         loss_mining = (F.softmax(out_masked, dim=1) * target_one_hot).sum() / n
         
         if mask is not None:
-            loss_seg = -(mask * torch.log(cam + 1e-6) + \
-                         (1 - mask) * torch.log(1 - cam + 1e-6)).mean()
+            loss_seg = torch.zeros((1, ), dtype=torch.float32, device=loss_cls.device)
+#             loss_seg = -(mask * torch.log(cam + 1e-6) + \
+#                          (1 - mask) * torch.log(1 - cam + 1e-6)).mean()
             loss = loss_cls + self.alpha * loss_mining + self.omega * loss_seg
         else:
             loss_seg = torch.zeros((1, ), dtype=torch.float32, device=loss_cls.device)

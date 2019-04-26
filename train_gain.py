@@ -78,7 +78,7 @@ if __name__ == '__main__':
         best_acc = 0
         for epoch in range(max_epoch):
             gai_net_single.train()
-            writer.add_scalar('lr', optim.param_groups[0]['lr'], global_step=step)
+            writer.add_scalar('lr', optim.param_groups[0]['lr'], global_step=epoch)
             for i, batch_data in tqdm.tqdm(enumerate(train_loader)):
                 batch_x = batch_data[0].cuda()
                 batch_y = batch_data[1].cuda()

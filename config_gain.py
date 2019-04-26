@@ -7,6 +7,6 @@ batch_size = 64 * len(devices)
 num_classes = 110
 lr = 1e-2
 weight_decay = 5e-3
-interval = 10
+interval = 3
 epoch_size = 100
 checkpoint_dir = 'saved_models'
