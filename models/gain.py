@@ -55,7 +55,7 @@ class BasicBlock(nn.Module):
             identity = self.downsample(x)
 
         out += identity
-#         out = self.relu(out)
+        out = self.relu(out)
 
         return out
 
@@ -93,7 +93,7 @@ class Bottleneck(nn.Module):
             identity = self.downsample(x)
 
         out += identity
-#         out = self.relu(out)
+        out = self.relu(out)
 
         return out
 
@@ -111,7 +111,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(block, 64, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2, with_relu=False)
+        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
         self.linear = nn.Linear(512 * block.expansion, num_classes)
 
@@ -132,7 +132,7 @@ class ResNet(nn.Module):
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, with_relu=True):
+    def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -145,8 +145,6 @@ class ResNet(nn.Module):
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes))
-        if with_relu:
-            layers.append(nn.ReLU(inplace=True))
 
         return nn.Sequential(*layers)
 
@@ -162,7 +160,7 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         feature_map = self.layer4(x)
 
-        x = self.avgpool(torch.relu(feature_map))
+        x = self.avgpool(feature_map)
         x = x.view(x.size(0), -1)
         x = self.linear(x)
         gcam = (self.linear.weight[x.argmax(-1)].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
