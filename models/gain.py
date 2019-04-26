@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 
 
@@ -164,11 +165,13 @@ class ResNet(nn.Module):
         x = self.avgpool(torch.relu(feature_map))
         x = x.view(x.size(0), -1)
         x = self.linear(x)
-        attention_map = (self.linear.weight[x.argmax(-1)].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
-#         attention_map = torch.relu(attention_map)
-        attention_map = nn.functional.interpolate(attention_map, (h, w), mode='bilinear', align_corners=True)
+        gcam = (self.linear.weight[x.argmax(-1)].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
+        gcam = F.interpolate(gcam, (h, w), mode='bilinear', align_corners=True)
+        gcam_min = gcam.min()
+        gcam_max = gcam.max()
+        scaled_gcam = (gcam - gcam_min) / (gcam_max - gcam_min)
 
-        return x, attention_map
+        return x, scaled_gcam
 
 
 def resnet(model_name, pretrained=False, **kwargs):
@@ -194,28 +197,28 @@ def resnet(model_name, pretrained=False, **kwargs):
 
 
 class SoftMask(nn.Module):
-    def __init__(self, scale, threshold):
+    def __init__(self, scale=10, threshold=0.5):
         super().__init__()
         self.scale = scale
         self.threshold = threshold
         
     def forward(self, x):
-        return 1 / (1 + torch.exp(-self.scale * (x - self.threshold)))
+        return F.sigmoid(-self.scale * (x - self.threshold))
     
     
 class GAIN(nn.Module):
-    def __init__(self, num_classes, model_name='resnet50', pretrained=True, scale=10, threshold=0.0, **kwargs):
+    def __init__(self, num_classes, model_name='resnet50', pretrained=True, **kwargs):
         super().__init__()
         self.model = resnet(model_name, pretrained, num_classes=num_classes, **kwargs)
-        self.softmask = SoftMask(scale, threshold)
+        self.softmask = SoftMask()
     
     def forward(self, x):
-        out, attention_map = self.model(x)
-        mask = self.softmask(attention_map)
+        out, gcam = self.model(x)
+        mask = self.softmask(gcam)
         x_masked = x - (1 - mask)
-        out_masked, attention_map_masked = self.model(x_masked)
+        out_masked, gcam_masked = self.model(x_masked)
         
-        return out, out_masked, torch.sigmoid(attention_map)
+        return out, out_masked, torch.sigmoid(gcam)
     
     
 class GAINLoss(nn.Module):
@@ -228,13 +231,19 @@ class GAINLoss(nn.Module):
         self.criterion_seg = nn.MSELoss()
         
     def forward(self, out, out_masked, cam, target, mask=None):
+        n, c = out.shape
         loss_cls = self.criterion_cls(out, target)
-        out_inverse = torch.log(torch.clamp(1 - torch.softmax(out_masked, dim=1), min=1e-6, max=1))
-        loss_mining = self.criterion_mining(out_inverse, target)
+        
+        target_one_hot = torch.zeros((n, c), dtype=torch.float32, device=target.device)
+        target_one_hot.scatter_(1, target.view(-1, 1), 1)
+        loss_mining = (F.softmax(out_masked, dim=1) * target_one_hot).sum() / n
+        
         if mask is not None:
             loss_seg = -(mask * torch.log(cam + 1e-6) + \
                          (1 - mask) * torch.log(1 - cam + 1e-6)).mean()
+            loss = loss_cls + self.alpha * loss_mining + self.omega * loss_seg
         else:
             loss_seg = torch.zeros((1, ), dtype=torch.float32, device=loss_cls.device)
-        loss = loss_cls + self.alpha * loss_mining + self.omega * loss_seg
+            loss = loss_cls + self.alpha * loss_mining
+        
         return loss, (loss_cls, loss_mining, loss_seg)

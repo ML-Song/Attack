@@ -7,6 +7,7 @@ import numpy as np
 import torch.nn as nn
 import torchvision as tv
 from sklearn import metrics
+import torch.nn.functional as F
 from tensorboardX import SummaryWriter
 from torchvision.datasets.folder import *
 import torchvision.transforms as transforms
@@ -127,10 +128,13 @@ if __name__ == '__main__':
                     loss = (loss_cls_target + beta * loss_min_noise) / (1 + beta)
                     writer.add_scalar('loss_cls_target', loss_cls_target.data, global_step=step)
                 else:
-                    out_inverses = [torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6, max=1)) for out in outs]
+                    target_one_hot = torch.zeros((n, num_classes), dtype=torch.float32, device=batch_y.device)
+                    target_one_hot.scatter_(1, batch_y.view(-1, 1), 1)
+                    loss_cls_non_target = sum([(F.softmax(out, dim=1) * target_one_hot).mean() for out in outs]) / len(outs)
+#                     out_inverses = [torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6, max=1)) for out in outs]
                     
-                    loss_cls_non_target = sum([criterion_cls_non_target(out_inverse, batch_y) \
-                                               for out_inverse in out_inverses]) / len(outs)
+#                     loss_cls_non_target = sum([criterion_cls_non_target(out_inverse, batch_y) \
+#                                                for out_inverse in out_inverses]) / len(outs)
                     loss = (loss_cls_non_target + beta * loss_min_noise) / (1 + beta)
                     writer.add_scalar('loss_cls_non_target', loss_cls_non_target.data, global_step=step)
                 loss.backward()
