@@ -127,7 +127,7 @@ if __name__ == '__main__':
                     loss = (loss_cls_target + beta * loss_min_noise) / (1 + beta)
                     writer.add_scalar('loss_cls_target', loss_cls_target.data, global_step=step)
                 else:
-                    out_inverses = [torch.log(1 - torch.softmax(out, dim=1)) for out in outs]
+                    out_inverses = [torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6, max=1)) for out in outs]
                     
                     loss_cls_non_target = sum([criterion_cls_non_target(out_inverse, batch_y) \
                                                for out_inverse in out_inverses]) / len(outs)
