@@ -67,7 +67,7 @@ if __name__ == '__main__':
     else:
         gai_net = nn.DataParallel(gai_net_single, device_ids=range(len(devices))).cuda()
     criterion = gain.GAINLoss()
-    optim = torch.optim.SGD(gai_net_single.parameters(), lr=lr, weight_decay=5e-4, momentum=0.9)
+    optim = torch.optim.SGD(gai_net_single.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim, 'max', verbose=True, patience=20, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):

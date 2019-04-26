@@ -90,7 +90,7 @@ if __name__ == '__main__':
     criterion_cls_target = nn.CrossEntropyLoss()
     criterion_cls_non_target = nn.NLLLoss()
     criterion_min_noise = nn.MSELoss()
-    optim = torch.optim.SGD(attack_net_single.parameters(), lr=lr, weight_decay=5e-3, momentum=0.9)
+    optim = torch.optim.SGD(attack_net_single.parameters(), lr=lr, weight_decay=weight_decay, momentum=0.9)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optim, 'min', verbose=True, patience=20, factor=0.2, threshold=5e-3)
     if not os.path.exists(checkpoint_dir):
