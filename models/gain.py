@@ -148,7 +148,7 @@ class ResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, target=None):
         n, c, h, w = x.shape
         x = self.conv1(x)
         x = self.bn1(x)
@@ -163,7 +163,10 @@ class ResNet(nn.Module):
         x = self.avgpool(feature_map)
         x = x.view(x.size(0), -1)
         x = self.linear(x)
-        gcam = (self.linear.weight[x.argmax(-1)].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
+        if target is None:
+            gcam = (self.linear.weight[x.argmax(-1)].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
+        else:
+            gcam = (self.linear.weight[target].unsqueeze(-1).unsqueeze(-1) * feature_map).sum(dim=1, keepdim=True)
         gcam = F.interpolate(gcam, (h, w), mode='bilinear', align_corners=True)
         gcam_min = gcam.min()
         gcam_max = gcam.max()
@@ -210,12 +213,12 @@ class GAIN(nn.Module):
         self.model = resnet(model_name, pretrained, num_classes=num_classes, **kwargs)
         self.softmask = SoftMask()
     
-    def forward(self, x):
-        out, gcam = self.model(x)
+    def forward(self, x, target=None):
+        out, gcam = self.model(x, target)
         mask = self.softmask(gcam)
         x_mean = x.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
         x_masked = x * (1 - mask) + x_mean * mask
-        out_masked, gcam_masked = self.model(x_masked)
+        out_masked, gcam_masked = self.model(x_masked, target)
         
         return out, out_masked, gcam
     

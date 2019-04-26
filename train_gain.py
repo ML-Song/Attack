@@ -91,7 +91,7 @@ if __name__ == '__main__':
                 batch_y = batch_data[1].cuda()
                 n, c, h, w = batch_x.shape
                 optim.zero_grad()
-                out, out_masked, cam = gai_net(batch_x)
+                out, out_masked, cam = gai_net(batch_x, batch_y)
                 loss, (loss_cls, loss_mining, loss_seg) = criterion(out, out_masked, cam, batch_y)
                 loss.backward()
                 optim.step()
@@ -111,10 +111,10 @@ if __name__ == '__main__':
                 cams = []
                 for i, batch_data in tqdm.tqdm(enumerate(vali_loader)):
                     batch_x = batch_data[0].cuda()
-                    batch_y = batch_data[1]
+                    batch_y = batch_data[1].cuda()
                     n, c, h, w = batch_x.shape
-                    out, out_masked, cam = gai_net(batch_x)
-                    gt.append(batch_y)
+                    out, out_masked, cam = gai_net(batch_x, batch_y)
+                    gt.append(batch_y.cpu())
                     predictions.append(out.argmax(dim=1).detach().cpu())
                     predictions_masked.append(out_masked.argmax(dim=1).detach().cpu())
                     
