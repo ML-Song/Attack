@@ -1,6 +1,6 @@
 #coding=utf-8
 
-with_transform = False
+with_transform = True
 devices = [2, 3]
 max_epoch = 300
 batch_size = 64 * len(devices)

@@ -195,7 +195,7 @@ def resnet(model_name, pretrained=False, **kwargs):
 
 
 class SoftMask(nn.Module):
-    def __init__(self, scale=10, threshold=0.):
+    def __init__(self, scale=10, threshold=0.5):
         super().__init__()
         self.scale = scale
         self.threshold = threshold
