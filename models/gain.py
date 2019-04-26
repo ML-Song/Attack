@@ -224,12 +224,13 @@ class GAINLoss(nn.Module):
         self.alpha = alpha
         self.omega = omega
         self.criterion_cls = nn.CrossEntropyLoss()
-        self.criterion_mining = nn.CrossEntropyLoss()
+        self.criterion_mining = nn.NLLLoss()
         self.criterion_seg = nn.MSELoss()
         
     def forward(self, out, out_masked, cam, target, mask=None):
         loss_cls = self.criterion_cls(out, target)
-        loss_mining = -torch.log(torch.clamp(1 - torch.softmax(out_masked, dim=-1)[:, target], min=1e-6, max=1)).mean()
+        out_inverse = torch.log(torch.clamp(1 - torch.softmax(out_masked, dim=1), min=1e-6, max=1))
+        loss_mining = self.criterion_mining(out_inverse, target)
         if mask is not None:
             loss_seg = -(mask * torch.log(cam + 1e-6) + \
                          (1 - mask) * torch.log(1 - cam + 1e-6)).mean()
