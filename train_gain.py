@@ -35,18 +35,18 @@ if __name__ == '__main__':
         data_augmentation = tv.transforms.Compose([])
 
     train_transform = transforms.Compose([
-        data_augmentation,
-        transforms.Resize(model_dimension),
-        transforms.CenterCrop(center_crop),
+#         data_augmentation,
+        transforms.Resize((model_dimension, model_dimension)),
+#         transforms.CenterCrop(center_crop),
         transforms.ToTensor(),
-        normalize,
+#         normalize,
     ])
 
     test_transform = transforms.Compose([
-        transforms.Resize(model_dimension),
-        transforms.CenterCrop(center_crop),
+        transforms.Resize((model_dimension, model_dimension)),
+#         transforms.CenterCrop(center_crop),
         transforms.ToTensor(),
-        normalize,
+#         normalize,
     ])
 
     train_dataset = image_from_json.ImageDataSet(
@@ -69,6 +69,7 @@ if __name__ == '__main__':
                                               shuffle=True, drop_last=False)
     
     gai_net_single = gain.GAIN(num_classes)
+    gai_net_single.load_state_dict(torch.load('{}/best_{}.pt'.format(checkpoint_dir, comment)))
     if len(devices) == 1:
         gai_net = gai_net_single.cuda()
     else:
