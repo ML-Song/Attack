@@ -139,15 +139,15 @@ if __name__ == '__main__':
         inception_out = inception_out.argmax(dim=0).numpy().tolist()
         inception_predictions.append(inception_out)
 
-        if each_label == vgg_out:
-            vgg_score += 128
+        if each_target != vgg_out:
+            vgg_score += 64
         else:
             test_input = test_loader(each_image)
             test_output = test_loader(each_image.replace("dev_data", "outputs"))
             vgg_score += np.sqrt(np.mean((test_input-test_output)**2))
 
-        if each_label == inception_out:
-            inception_score += 128
+        if each_target != inception_out:
+            inception_score += 64
         else:
             test_input = test_loader(each_image)
             test_output = test_loader(each_image.replace("dev_data", "outputs"))
@@ -159,7 +159,24 @@ if __name__ == '__main__':
         #     test_input = test_loader(each_image)
         #     test_output = test_loader(each_image.replace("dev_data", "output"))
         #     resnet_score += np.sqrt(np.mean((test_input-test_output)**2))
+    vgg_equal_gt_num = 0.
+    vgg_equal_target_num = 0.
+    inception_equal_gt_num = 0.
+    inception_equal_target_num = 0.
+    for i in range(len(inception_predictions)):
+        if int(inception_predictions[i]) == int(gt[i]):
+            inception_equal_gt_num += 1
+        elif int(inception_predictions[i]) == int(target_gt[i]):
+            inception_equal_target_num += 1
+        if int(vgg_predictions[i]) == int(gt[i]):
+            vgg_equal_gt_num += 1
+        elif int(vgg_predictions[i]) == int(target_gt[i]):
+            vgg_equal_target_num += 1
 
+
+    print("gt:{}\n, target_gt:{}\n, vgg_prediction:{}\n, inception_prediction:{}\n".format(gt, target_gt, vgg_predictions, inception_predictions))
+    print("vgg_equal_gt_num:{}, vgg_equal_target_num:{}, inception_equal_gt_num:{}, inception_equal_target_num:{}".format(
+            vgg_equal_gt_num, vgg_equal_target_num, inception_equal_gt_num, inception_equal_target_num))
     print("vgg:{}, inception:{}, mean:{}".format(vgg_score/110, inception_score/110, (vgg_score+inception_score)/220))
 
 
