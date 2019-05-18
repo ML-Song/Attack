@@ -10,3 +10,4 @@ test_batch_size = 100
 max_epoch = 50
 checkpoint_path = 'saved_models/best_model_GAIN.pt'
 loss_weights = (1, 1, 1)
+area_threshold = 0.2
