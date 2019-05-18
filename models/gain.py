@@ -51,7 +51,7 @@ class GAIN(nn.Module):
 class GAINSolver(object):
     def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
                  loss_weights=None, optimizer='sgd', lr=1e-3, patience=5, interval=1, 
-                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], transfrom=None):
+                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], transfrom=None, area_threshold=0.2):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.lr = lr
@@ -61,6 +61,7 @@ class GAINSolver(object):
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_name = checkpoint_name
         self.devices = devices
+        self.area_threshold = area_threshold
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
                 tv.transforms.Resize((224, 224)),
@@ -227,4 +228,7 @@ class GAINSolver(object):
         if mask is None:
             return loss_cls, loss_am
         else:
-            return loss_cls, loss_am, mask.mean()
+            loss_mask = mask.view(n, -1).mean(dim=1) - self.area_threshold
+            loss_mask = torch.clamp(loss_mask, min=0)
+            loss_mask = loss_mask.mean()
+            return loss_cls, loss_am, loss_mask
