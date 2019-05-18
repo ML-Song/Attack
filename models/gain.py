@@ -117,8 +117,15 @@ class GAINSolver(object):
                 img_masked = img * (1 - mask)
                 cls_masked = self.net(img_masked)
 
-                loss_cls, loss_am = self.get_loss(cls, cls_masked, label)
-                loss = loss_cls + loss_am
+                if len(self.loss_weights) == 2:
+                    loss_cls, loss_am = self.get_loss(cls, cls_masked, label)
+                    loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
+                elif len(self.loss_weights) == 3:
+                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
+                    loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1] + loss_mask * self.loss_weights[2]
+                else:
+                    raise Exception('Loss Weights: {} Error'.format(self.loss_weights))
+                    
                 loss.backward()
                 self.opt.step()
                 if writer:
@@ -128,6 +135,9 @@ class GAINSolver(object):
                         'loss_cls', loss_cls.data, global_step=step)
                     writer.add_scalar(
                         'loss_mining', loss_am.data, global_step=step)
+                    if len(self.loss_weights) == 3:
+                        writer.add_scalar(
+                            'loss_mask', loss_mask.data, global_step=step)
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
@@ -138,11 +148,15 @@ class GAINSolver(object):
                     writer.add_scalar(
                         'acc', acc, global_step=epoch)
 
-                    imgs = vutils.make_grid(imgs, normalize=True, scale_each=True)
-                    writer.add_image('Image', imgs, epoch)
+#                     imgs = vutils.make_grid(imgs, normalize=True, scale_each=True)
+#                     writer.add_image('Image', imgs, epoch)
 
-                    masks = vutils.make_grid(masks, normalize=True, scale_each=True)
-                    writer.add_image('Mask', masks, epoch)
+#                     masks = vutils.make_grid(masks, normalize=True, scale_each=True)
+#                     writer.add_image('Mask', masks, epoch)
+                    
+                    image_with_mask = imgs * (masks / 2 + 0.5)
+                    image_with_mask = vutils.make_grid(image_with_mask, normalize=True, scale_each=True)
+                    writer.add_image('Image With Mask', image_with_mask, epoch)
                 
                 self.scheduler.step(acc)
                 if best_score < acc:
@@ -200,7 +214,7 @@ class GAINSolver(object):
     def _soft_mask(self, x, scale=10, threshold=0.5):
         return torch.sigmoid(scale * (x - threshold))
     
-    def get_loss(self, pred, pred_masked, target):
+    def get_loss(self, pred, pred_masked, target, mask=None):
         n, c = pred.shape
         loss_cls = F.cross_entropy(pred, target)
         
@@ -210,4 +224,7 @@ class GAINSolver(object):
         target_one_hot.scatter_(1, target.view(-1, 1), 1)
         loss_am = (torch.sigmoid(pred_masked) * target_one_hot).sum() / n
         
-        return loss_cls, loss_am
+        if mask is None:
+            return loss_cls, loss_am
+        else:
+            return loss_cls, loss_am, mask.mean()
