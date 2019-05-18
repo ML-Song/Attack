@@ -56,6 +56,7 @@ if __name__ == '__main__':
     backbone = drn.drn_d_54(True, out_feat=True)
     net = GAIN(backbone, num_classes, in_channels=512)
     solver = GAINSolver(net, train_loader, test_loader, test_batch_size, lr=lr, checkpoint_name=checkpoint_name, devices=devices)
-    solver.load_model('saved_models/best_model_GAIN.pt')
+    if checkpoint_path:
+        solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
         solver.train(max_epoch, writer)

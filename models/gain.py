@@ -15,7 +15,6 @@ class GAIN(nn.Module):
         self.backbone = backbone
         if in_channels is None:
             in_channels = GAIN._get_output_shape(backbone)
-            print(in_channels)
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.fc = nn.Linear(in_channels, num_classes)
         
@@ -162,6 +161,8 @@ class GAINSolver(object):
                 label = data[1]
                 cls, gcam = self.net(img, with_gcam=True)
                 mask = self._soft_mask(gcam)
+                mask[mask < 0.5] = 0
+                mask[mask >= 0.5] = 1
 
                 pred.append(cls.argmax(dim=1).detach().cpu())
                 gt.append(label)
@@ -191,11 +192,13 @@ class GAINSolver(object):
         with torch.no_grad():
             cls, gcam = self.net(x, with_gcam=True)
             mask = self._soft_mask(gcam).detach().cpu()
+            mask[mask < 0.5] = 0
+            mask[mask >= 0.5] = 1
             mask = mask.permute(0, 2, 3, 1).numpy()
         return cls, mask
     
     def _soft_mask(self, x, scale=10, threshold=0.5):
-        return torch.sigmoid(-scale * (x - threshold))
+        return torch.sigmoid(scale * (x - threshold))
     
     def get_loss(self, pred, pred_masked, target):
         n, c = pred.shape
