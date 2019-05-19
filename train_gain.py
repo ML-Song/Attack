@@ -55,7 +55,7 @@ if __name__ == '__main__':
     
     backbone = drn.drn_d_54(True, out_feat=True)
     net = GAIN(backbone, num_classes, in_channels=512)
-    solver = GAINSolver(net, train_loader, test_loader, test_batch_size, 
+    solver = GAINSolver(net, train_loader, vali_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
                         devices=devices, area_threshold=area_threshold)
     if checkpoint_path:

@@ -142,12 +142,15 @@ class GAINSolver(object):
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
-                acc, imgs, masks = self.test()
+                acc, acc_masked, imgs, masks = self.test()
                 if writer:
                     writer.add_scalar(
                         'lr', self.opt.param_groups[0]['lr'], global_step=epoch)
                     writer.add_scalar(
                         'acc', acc, global_step=epoch)
+                    writer.add_scalar(
+                        'acc_masked', acc_masked, global_step=epoch)
+                    score = acc - acc_masked
 
 #                     imgs = vutils.make_grid(imgs, normalize=True, scale_each=True)
 #                     writer.add_image('Image', imgs, epoch)
@@ -155,19 +158,20 @@ class GAINSolver(object):
 #                     masks = vutils.make_grid(masks, normalize=True, scale_each=True)
 #                     writer.add_image('Mask', masks, epoch)
                     
-                    image_with_mask = imgs * (masks / 2 + 0.5)
+                    image_with_mask = imgs * (masks * 0.8 + 0.2)
                     image_with_mask = vutils.make_grid(image_with_mask, normalize=True, scale_each=True)
                     writer.add_image('Image With Mask', image_with_mask, epoch)
                 
-                self.scheduler.step(acc)
-                if best_score < acc:
-                    best_score = acc
+                self.scheduler.step(score)
+                if best_score < score:
+                    best_score = score
                     self.save_model(self.checkpoint_dir)
 
     def test(self, max_num=160):
         self.net.eval()
         with torch.no_grad():
             pred = []
+            pred_masked = []
             gt = []
             imgs = []
             masks = []
@@ -178,19 +182,24 @@ class GAINSolver(object):
                 mask = self._soft_mask(gcam)
                 mask[mask < 0.5] = 0
                 mask[mask >= 0.5] = 1
-
+                img_masked = img * (1 - mask)
+                cls_masked = self.net(img_masked)
+                
                 pred.append(cls.argmax(dim=1).detach().cpu())
+                pred_masked.append(cls_masked.argmax(dim=1).detach().cpu())
                 gt.append(label)
                 if len(imgs) * self.batch_size < max_num:
                     masks.append(mask.detach().cpu())
                     imgs.append(img.detach().cpu())
 
             pred = torch.cat(pred).numpy()
+            pred_masked = torch.cat(pred_masked).numpy()
             gt = torch.cat(gt).numpy()
             masks = torch.cat(masks)
             imgs = torch.cat(imgs)
             acc = metrics.accuracy_score(gt, pred)
-        return acc, imgs[: max_num], masks[: max_num]
+            acc_masked = metrics.accuracy_score(gt, pred_masked)
+        return acc, acc_masked, imgs[: max_num], masks[: max_num]
 
     def save_model(self, checkpoint_dir, comment=None):
         if comment is None:
