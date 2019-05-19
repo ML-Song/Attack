@@ -6,7 +6,7 @@ import pretrainedmodels
 import torchvision as tv
 from tensorboardX import SummaryWriter
 
-from models import drn
+from models import drn, activations
 from config_gain import *
 from models.gain import GAIN, GAINSolver
 from dataset import image_from_json, image_list_folder
@@ -58,10 +58,12 @@ if __name__ == '__main__':
     backbone = pretrainedmodels.__dict__[model_name]()
     backbone = nn.Sequential(*list(backbone.children())[: -2])
 #     backbone = drn.drn_d_54(True, out_feat=True)
-    net = GAIN(backbone, num_classes, in_channels=in_channels)
-    solver = GAINSolver(net, train_loader, vali_loader, test_batch_size, 
+#     net = GAIN(backbone, num_classes, in_channels=in_channels)
+    solver = GAINSolver(backbone, num_classes, in_channels, 
+                        train_loader, vali_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
-                        devices=devices, area_threshold=area_threshold, optimizer=optimizer)
+                        devices=devices, area_threshold=area_threshold, 
+                        optimizer=optimizer, activation=activations.HardConcrete if use_activation else None)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:

@@ -49,10 +49,10 @@ class GAIN(nn.Module):
     
     
 class GAINSolver(object):
-    def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
+    def __init__(self, backbone, num_classes, in_channels=512, train_loader=None, test_loader=None, batch_size=None, 
                  loss_weights=None, optimizer='adam', lr=1e-3, patience=5, interval=1, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], 
-                 transfrom=None, area_threshold=0.2):
+                 transfrom=None, area_threshold=0.2, activation=None):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.lr = lr
@@ -63,6 +63,7 @@ class GAINSolver(object):
         self.checkpoint_name = checkpoint_name
         self.devices = devices
         self.area_threshold = area_threshold
+        self.activation = activation
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
                 tv.transforms.Resize((224, 224)),
@@ -80,7 +81,7 @@ class GAINSolver(object):
         if not os.path.exists(checkpoint_dir):
             os.mkdir(checkpoint_dir)
             
-        self.net_single = net
+        self.net_single = GAIN(backbone, num_classes, in_channels=in_channels)
         if len(devices) == 0:
             pass
         elif len(devices) == 1:
@@ -240,7 +241,10 @@ class GAINSolver(object):
         return cls, mask
     
     def _soft_mask(self, x, scale=10, threshold=0.5):
-        return torch.sigmoid(scale * (x - threshold))
+        if self.activation is None:
+            return torch.sigmoid(scale * (x - threshold))
+        else:
+            return self.activation(x)
     
     def get_loss(self, pred, pred_masked, target, mask=None):
         n, c = pred.shape
@@ -254,8 +258,9 @@ class GAINSolver(object):
             m, c = true_pred_masked.shape
             true_target_one_hot = torch.zeros((m, c), dtype=torch.float32, device=target.device)
             true_target_one_hot.scatter_(1, true_target.view(-1, 1), 1)
-            loss_am = (-torch.log(
-                torch.clamp(1 - F.softmax(true_pred_masked, dim=1), min=1e-6)) * true_target_one_hot).sum() / m
+            loss_am = (F.softmax(true_pred_masked, dim=1) * true_target_one_hot).sum() / m
+#             loss_am = (-torch.log(
+#                 torch.clamp(1 - F.softmax(true_pred_masked, dim=1), min=1e-6)) * true_target_one_hot).sum() / m
         else:
             loss_am = torch.zeros_like(loss_cls)
 #         target_one_hot = torch.zeros((n, c), dtype=torch.float32, device=target.device)
