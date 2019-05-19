@@ -50,7 +50,7 @@ class GAIN(nn.Module):
     
 class GAINSolver(object):
     def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
-                 loss_weights=None, optimizer='sgd', lr=1e-3, patience=5, interval=1, 
+                 loss_weights=None, optimizer='adam', lr=1e-3, patience=5, interval=1, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], 
                  transfrom=None, area_threshold=0.2):
         self.train_loader = train_loader
@@ -103,7 +103,7 @@ class GAINSolver(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None, pretrain_percentage=0.5, mode='PRETRAIN'):
+    def train(self, max_epoch, writer=None, pretrain_percentage=0.0, mode='PRETRAIN'):
         assert(mode in ('PRETRAIN', 'TRAIN'))
         pretrain_epochs = int(max_epoch * pretrain_percentage)
         torch.cuda.manual_seed(1)
@@ -116,11 +116,12 @@ class GAINSolver(object):
             for batch_idx, data in enumerate(self.train_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
+                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
 
                 self.reset_grad()
                 cls, gcam = self.net(img, with_gcam=True, target=label)
                 mask = self._soft_mask(gcam)
-                img_masked = img * (1 - mask)
+                img_masked = img * (1 - mask) + img_mean * mask
                 cls_masked = self.net(img_masked)
 
                 if len(self.loss_weights) == 2:
@@ -130,7 +131,7 @@ class GAINSolver(object):
                     elif mode == 'TRAIN':
                         loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
                 elif len(self.loss_weights) == 3:
-                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
+                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, gcam)
                     if mode == 'PRETRAIN':
                         loss = loss_cls
                     elif mode == 'TRAIN':

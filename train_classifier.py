@@ -11,8 +11,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Classifier model: {}'.format(model_name)
-    comment = 'Classifier model: {}'.format(model_name)
+    checkpoint_name = 'Classifier model: {} optimizer: {}'.format(model_name, optimizer)
+    comment = 'Classifier model: {} optimizer: {}'.format(model_name, optimizer)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -52,10 +52,10 @@ if __name__ == '__main__':
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=test_batch_size,
                                               shuffle=True, drop_last=False)
     
-    model = pretrainedmodels.__dict__[model_name](pretrained=None)
+    model = pretrainedmodels.__dict__[model_name]()
     net = ClassifierNet(model, num_classes)
     solver = Classifier(net, train_loader, vali_loader, test_batch_size, 
-                        lr=lr, checkpoint_name=checkpoint_name, devices=devices)
+                        lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:

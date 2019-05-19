@@ -22,7 +22,7 @@ class ClassifierNet(nn.Module):
 
 class Classifier(object):
     def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
-                 optimizer='sgd', lr=1e-3, patience=5, interval=1, 
+                 optimizer='adam', lr=1e-3, patience=5, interval=1, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0]):
         self.train_loader = train_loader
         self.test_loader = test_loader

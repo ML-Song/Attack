@@ -1,6 +1,8 @@
 #coding=utf-8
 import os
 import torch
+from torch import nn
+import pretrainedmodels
 import torchvision as tv
 from tensorboardX import SummaryWriter
 
@@ -11,8 +13,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'GAIN'#.format(1)
-    comment = 'GAIN'#.format(1)
+    checkpoint_name = 'GAIN model: {} optimizer: {}'.format(model_name, optimizer)
+    comment = 'GAIN model: {} optimizer: {}'.format(model_name, optimizer)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -53,11 +55,13 @@ if __name__ == '__main__':
                                               shuffle=True, drop_last=False)
     
     
-    backbone = drn.drn_d_54(True, out_feat=True)
-    net = GAIN(backbone, num_classes, in_channels=512)
+    backbone = pretrainedmodels.__dict__[model_name]()
+    backbone = nn.Sequential(*list(backbone.children())[: -2])
+#     backbone = drn.drn_d_54(True, out_feat=True)
+    net = GAIN(backbone, num_classes, in_channels=in_channels)
     solver = GAINSolver(net, train_loader, vali_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
-                        devices=devices, area_threshold=area_threshold)
+                        devices=devices, area_threshold=area_threshold, optimizer=optimizer)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
