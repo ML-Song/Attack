@@ -13,8 +13,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'GAIN model: {} optimizer: {}'.format(model_name, optimizer)
-    comment = 'GAIN model: {} optimizer: {}'.format(model_name, optimizer)
+    checkpoint_name = 'GAIN model: {} optimizer: {} loc: {}'.format(model_name, optimizer, loc)
+    comment = 'GAIN model: {} optimizer: {} loc: {}'.format(model_name, optimizer, loc)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]

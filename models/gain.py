@@ -33,8 +33,9 @@ class GAIN(nn.Module):
                 weight = weights[target]
                 gcam = (weight.unsqueeze(-1).unsqueeze(-1) * feat_map).sum(dim=1, keepdim=True)
             gcam = F.interpolate(gcam, (h, w), mode='bilinear', align_corners=True)
-            gcam_min = gcam.min()
-            gcam_max = gcam.max()
+            gcam_flatten = gcam.view(n, -1)
+            gcam_min = gcam_flatten.min(dim=1)[0].view(n, 1, 1, 1)
+            gcam_max = gcam_flatten.max(dim=1)[0].view(n, 1, 1, 1)
             scaled_gcam = (gcam - gcam_min) / (gcam_max - gcam_min)
             return prob, scaled_gcam
         else:
@@ -244,7 +245,7 @@ class GAINSolver(object):
         if self.activation is None:
             return torch.sigmoid(scale * (x - threshold))
         else:
-            return self.activation(x)
+            return self.activation(torch.clamp(x, min=1e-6, max=1-1e-6))
     
     def get_loss(self, pred, pred_masked, target, mask=None):
         n, c = pred.shape
