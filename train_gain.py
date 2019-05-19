@@ -6,8 +6,8 @@ import pretrainedmodels
 import torchvision as tv
 from tensorboardX import SummaryWriter
 
-from models import drn, activations
 from config_gain import *
+from models import drn, activations
 from models.gain import GAIN, GAINSolver
 from dataset import image_from_json, image_list_folder
 
@@ -54,10 +54,13 @@ if __name__ == '__main__':
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=test_batch_size,
                                               shuffle=True, drop_last=False)
     
-    
-    backbone = pretrainedmodels.__dict__[model_name]()
-    backbone = nn.Sequential(*list(backbone.children())[: -2])
-#     backbone = drn.drn_d_54(True, out_feat=True)
+    if model_name in pretrainedmodels.model_names:
+        backbone = pretrainedmodels.__dict__[model_name]()
+        backbone = nn.Sequential(*list(backbone.children())[: -2])
+    elif model_name == 'drn_d_54':
+        backbone = drn.drn_d_54(True, out_feat=True)
+    else:
+        raise Exception('\nModel {} not exist'.format(model_name))
 #     net = GAIN(backbone, num_classes, in_channels=in_channels)
     solver = GAINSolver(backbone, num_classes, in_channels, 
                         train_loader, vali_loader, test_batch_size, 
