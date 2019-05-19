@@ -131,7 +131,7 @@ class GAINSolver(object):
                     elif mode == 'TRAIN':
                         loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
                 elif len(self.loss_weights) == 3:
-                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, gcam)
+                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
                     if mode == 'PRETRAIN':
                         loss = loss_cls
                     elif mode == 'TRAIN':
@@ -191,11 +191,13 @@ class GAINSolver(object):
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1]
+                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+                
                 cls, gcam = self.net(img, with_gcam=True, target=label)
                 mask = self._soft_mask(gcam)
                 mask[mask < 0.5] = 0
                 mask[mask >= 0.5] = 1
-                img_masked = img * (1 - mask)
+                img_masked = img * (1 - mask) + img_mean * mask
                 cls_masked = self.net(img_masked)
                 
                 pred.append(cls.argmax(dim=1).detach().cpu())
@@ -244,17 +246,37 @@ class GAINSolver(object):
         n, c = pred.shape
         loss_cls = F.cross_entropy(pred, target)
         
-#         loss_am = F.cross_entropy(pred_masked, target)
-        
-        target_one_hot = torch.zeros((n, c), dtype=torch.float32, device=target.device)
-        target_one_hot.scatter_(1, target.view(-1, 1), 1)
-        loss_am = (torch.sigmoid(pred_masked) * target_one_hot).sum() / n
+        true_index = pred.argmax(dim=1) == target
+        if true_index.sum() > 0:
+            true_target = target[true_index]
+            true_pred_masked = pred_masked[true_index]
+
+            m, c = true_pred_masked.shape
+            true_target_one_hot = torch.zeros((m, c), dtype=torch.float32, device=target.device)
+            true_target_one_hot.scatter_(1, true_target.view(-1, 1), 1)
+            loss_am = (-torch.log(
+                torch.clamp(1 - F.softmax(true_pred_masked, dim=1), min=1e-6)) * true_target_one_hot).sum() / m
+        else:
+            loss_am = torch.zeros_like(loss_cls)
+#         target_one_hot = torch.zeros((n, c), dtype=torch.float32, device=target.device)
+#         target_one_hot.scatter_(1, target.view(-1, 1), 1)
+# #         loss_am = (torch.sigmoid(pred_masked) * target_one_hot).sum() / n
 #         loss_am = (-torch.log(torch.clamp(1 - F.softmax(pred_masked, dim=1), min=1e-6)) * target_one_hot).sum() / n
         
         if mask is None:
             return loss_cls, loss_am
         else:
-            loss_mask = mask.view(n, -1).mean(dim=1) - self.area_threshold
-            loss_mask = torch.clamp(loss_mask, min=0)
-            loss_mask = loss_mask.mean()
+            if true_index.sum() > 0:
+                true_mask = mask[true_index]
+                loss_mask = true_mask.view(m, -1).mean(dim=1) - self.area_threshold
+#                 loss_mask = mask.view(n, -1).mean(dim=1) - self.area_threshold
+#                 index = loss_mask > 0
+#                 if index.sum() == 0:
+#                     loss_mask = torch.zeros_like(loss_cls)
+#                 else:
+#                     loss_mask = loss_mask[index].mean()
+                loss_mask = torch.clamp(loss_mask, min=0)
+                loss_mask = loss_mask.mean()
+            else:
+                loss_mask = torch.zeros_like(loss_cls)
             return loss_cls, loss_am, loss_mask
