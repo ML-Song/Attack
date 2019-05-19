@@ -232,7 +232,7 @@ class GAINSolver(object):
         
         target_one_hot = torch.zeros((n, c), dtype=torch.float32, device=target.device)
         target_one_hot.scatter_(1, target.view(-1, 1), 1)
-        loss_am = (torch.sigmoid(pred_masked) * target_one_hot).sum() / n
+        loss_am = (-torch.log(torch.clamp(1 - F.softmax(pred_masked, dim=1), min=1e-6)) * target_one_hot).sum() / n
         
         if mask is None:
             return loss_cls, loss_am
