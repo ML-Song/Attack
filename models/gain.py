@@ -51,7 +51,8 @@ class GAIN(nn.Module):
 class GAINSolver(object):
     def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
                  loss_weights=None, optimizer='sgd', lr=1e-3, patience=5, interval=1, 
-                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], transfrom=None, area_threshold=0.2):
+                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], 
+                 transfrom=None, area_threshold=0.2):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.lr = lr
@@ -102,11 +103,15 @@ class GAINSolver(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None):
+    def train(self, max_epoch, writer=None, pretrain_percentage=0.5, mode='PRETRAIN'):
+        assert(mode in ('PRETRAIN', 'TRAIN'))
+        pretrain_epochs = int(max_epoch * pretrain_percentage)
         torch.cuda.manual_seed(1)
         best_score = 0
         step = 1
         for epoch in tqdm.tqdm(range(max_epoch), total=max_epoch):
+            if epoch >= pretrain_epochs:
+                mode = 'TRAIN'
             self.net.train()
             for batch_idx, data in enumerate(self.train_loader):
                 img = data[0].cuda()
@@ -120,10 +125,16 @@ class GAINSolver(object):
 
                 if len(self.loss_weights) == 2:
                     loss_cls, loss_am = self.get_loss(cls, cls_masked, label)
-                    loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
+                    if mode == 'PRETRAIN':
+                        loss = loss_cls
+                    elif mode == 'TRAIN':
+                        loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
                 elif len(self.loss_weights) == 3:
                     loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
-                    loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1] + loss_mask * self.loss_weights[2]
+                    if mode == 'PRETRAIN':
+                        loss = loss_cls
+                    elif mode == 'TRAIN':
+                        loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1] + loss_mask * self.loss_weights[2]
                 else:
                     raise Exception('Loss Weights: {} Error'.format(self.loss_weights))
                     
@@ -157,9 +168,10 @@ class GAINSolver(object):
 
 #                     masks = vutils.make_grid(masks, normalize=True, scale_each=True)
 #                     writer.add_image('Mask', masks, epoch)
-                    
+
+                    imgs = torch.clamp(imgs * 0.5 + 0.5, min=0, max=1)
                     image_with_mask = imgs * (masks * 0.8 + 0.2)
-                    image_with_mask = vutils.make_grid(image_with_mask, normalize=True, scale_each=True)
+                    image_with_mask = vutils.make_grid(image_with_mask, normalize=False, scale_each=True)
                     writer.add_image('Image With Mask', image_with_mask, epoch)
                 
                 self.scheduler.step(score)
@@ -178,7 +190,7 @@ class GAINSolver(object):
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1]
-                cls, gcam = self.net(img, with_gcam=True)
+                cls, gcam = self.net(img, with_gcam=True, target=label)
                 mask = self._soft_mask(gcam)
                 mask[mask < 0.5] = 0
                 mask[mask >= 0.5] = 1
@@ -210,11 +222,14 @@ class GAINSolver(object):
     def load_model(self, model_path):
         self.net_single.load_state_dict(torch.load(model_path).state_dict())
     
-    def predict(self, img):
+    def predict(self, img, target=None):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         self.net.eval()
         with torch.no_grad():
-            cls, gcam = self.net(x, with_gcam=True)
+            if target is None:
+                cls, gcam = self.net(x, with_gcam=True)
+            else:
+                cls, gcam = self.net(x, with_gcam=True, target=target)
             mask = self._soft_mask(gcam).detach().cpu()
             mask[mask < 0.5] = 0
             mask[mask >= 0.5] = 1
