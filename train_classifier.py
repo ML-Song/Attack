@@ -11,8 +11,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Classifier'#.format(1)
-    comment = 'Classifier'#.format(1)
+    checkpoint_name = 'Classifier model: {}'.format(model_name)
+    comment = 'Classifier model: {}'.format(model_name)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -52,12 +52,8 @@ if __name__ == '__main__':
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=test_batch_size,
                                               shuffle=True, drop_last=False)
     
-    
-    model_names = ['inceptionv4', 'densenet121', 'resnet50', 'vgg16_bn', 'inceptionresnetv2']
-    models = [pretrainedmodels.__dict__[name](pretrained=None) for name in model_names]
-    net = ClassifierNet(models[4], num_classes)
-#     backbone = drn.drn_d_54(True, out_feat=True)
-#     net = GAIN(backbone, num_classes, in_channels=512)
+    model = pretrainedmodels.__dict__[model_name](pretrained=None)
+    net = ClassifierNet(model, num_classes)
     solver = Classifier(net, train_loader, vali_loader, test_batch_size, 
                         lr=lr, checkpoint_name=checkpoint_name, devices=devices)
     if checkpoint_path:

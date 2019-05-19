@@ -73,11 +73,14 @@ class Classifier(object):
                 self.reset_grad()
                 cls = self.net(img)
                 loss_cls = self.get_loss(cls, label)
-                loss_cls.backward()
+                loss = loss_cls
+                loss.backward()
                 self.opt.step()
                 if writer:
                     writer.add_scalar(
                         'loss_cls', loss_cls.data, global_step=step)
+                    writer.add_scalar(
+                        'loss', loss.data, global_step=step)
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
