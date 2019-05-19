@@ -63,7 +63,7 @@ if __name__ == '__main__':
                         train_loader, vali_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
                         devices=devices, area_threshold=area_threshold, 
-                        optimizer=optimizer, activation=activations.HardConcrete if use_activation else None)
+                        optimizer=optimizer, activation=activations.HardConcrete(loc) if loc is not None else None)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:

@@ -14,4 +14,4 @@ area_threshold = 0.25
 in_channels = 2048
 model_name = 'resnet50'
 optimizer = 'sgd'
-use_activation = True
+loc = -0.2
