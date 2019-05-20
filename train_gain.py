@@ -13,8 +13,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'GAIN model: {} optimizer: {} loc: {}'.format(model_name, optimizer, loc)
-    comment = 'GAIN model: {} optimizer: {} loc: {}'.format(model_name, optimizer, loc)
+    checkpoint_name = 'GAIN model: {} optimizer: {} loc: {} temp: {}'.format(model_name, optimizer, loc, temp)
+    comment = 'GAIN model: {} optimizer: {} loc: {} temp: {}'.format(model_name, optimizer, loc, temp)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -66,7 +66,7 @@ if __name__ == '__main__':
                         train_loader, vali_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
                         devices=devices, area_threshold=area_threshold, 
-                        optimizer=optimizer, activation=activations.HardConcrete(loc) if loc is not None else None)
+                        optimizer=optimizer, activation=activations.HardConcrete(loc, temp) if loc is not None else None)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:

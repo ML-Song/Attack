@@ -4,7 +4,7 @@ from torch import nn
 
 
 class HardConcrete(nn.Module):
-    def __init__(self, loc=0, temp=0.5, gamma=-0.1, zeta=1.1):
+    def __init__(self, loc=0, temp=0.1, gamma=-0.1, zeta=1.1):
         super().__init__()
         self.loc = loc
         self.temp = temp

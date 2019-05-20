@@ -235,9 +235,10 @@ class GAINSolver(object):
                 cls, gcam = self.net(x, with_gcam=True)
             else:
                 cls, gcam = self.net(x, with_gcam=True, target=target)
+            cls = cls.detach().cpu().numpy()
             mask = self._soft_mask(gcam).detach().cpu()
-            mask[mask < 0.5] = 0
-            mask[mask >= 0.5] = 1
+#             mask[mask < 0.5] = 0
+#             mask[mask >= 0.5] = 1
             mask = mask.permute(0, 2, 3, 1).numpy()
         return cls, mask
     
