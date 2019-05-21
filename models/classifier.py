@@ -22,7 +22,7 @@ class ClassifierNet(nn.Module):
 
 class Classifier(object):
     def __init__(self, net, train_loader=None, test_loader=None, batch_size=None, 
-                 optimizer='adam', lr=1e-3, patience=5, interval=1, 
+                 optimizer='adam', lr=1e-3, patience=5, interval=1, transfrom=None, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0]):
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -33,6 +33,14 @@ class Classifier(object):
         self.checkpoint_dir = checkpoint_dir
         self.checkpoint_name = checkpoint_name
         self.devices = devices
+        if transfrom is None:
+            self.transfrom = tv.transforms.Compose([
+                tv.transforms.Resize((224, 224)),
+                tv.transforms.ToTensor(),
+                tv.transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            ])
+        else:
+            self.transfrom = transfrom
         
         if not os.path.exists(checkpoint_dir):
             os.mkdir(checkpoint_dir)

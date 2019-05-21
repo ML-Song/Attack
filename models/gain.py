@@ -227,8 +227,13 @@ class GAINSolver(object):
     def load_model(self, model_path):
         self.net_single.load_state_dict(torch.load(model_path).state_dict())
     
-    def predict(self, img, target=None):
-        x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
+    def predict(self, img, target=None, out_size=(299, 299)):
+        if isinstance(img, list):
+            x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
+        elif isinstance(img, torch.Tensor):
+            x = img
+        else:
+            raise Exception('Img Type {} Not Supported.'.format(type(img)))
         self.net.eval()
         with torch.no_grad():
             if target is None:
@@ -236,7 +241,9 @@ class GAINSolver(object):
             else:
                 cls, gcam = self.net(x, with_gcam=True, target=target)
             cls = cls.detach().cpu().numpy()
+#             gcam = F.interpolate(gcam, out_size, mode='bilinear', align_corners=True)
             mask = self._soft_mask(gcam).detach().cpu()
+            mask = F.interpolate(mask, out_size, mode='bilinear', align_corners=True)
 #             mask[mask < 0.5] = 0
 #             mask[mask >= 0.5] = 1
             mask = mask.permute(0, 2, 3, 1).numpy()
