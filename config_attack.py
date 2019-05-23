@@ -13,4 +13,4 @@ classifier_path = ['saved_models/best_model_Classifier model: {}.pt'.format(i) f
 optimizer = 'sgd'
 targeted = False
 checkpoint_path = None
-weight = 1
+weight = 2

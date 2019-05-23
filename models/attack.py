@@ -18,16 +18,23 @@ class AttackNet(nn.Module):
         
     def forward(self, x, target=None):
         n, c, h, w = x.shape
-        noise = self.backbone(x)
+        out = self.backbone(x)
+        out = out.view(n, 2, -1, h, w)
+        mask = torch.sigmoid(out[:, 0])
+        noise = out[:, 1]
         if target is None:
-            return noise
+            return mask, noise
         else:
-            noise = noise.view(n, -1, self.out_channels, h, w)
             index = target.view(-1, 1, 1, 1, 1)
             index = index.repeat(1, 1, self.out_channels, h, w)
+            
+            mask = mask.view(n, -1, self.out_channels, h, w)
+            mask = mask.gather(1, index).squeeze(dim=1)
+            
+            noise = noise.view(n, -1, self.out_channels, h, w)
             noise = noise.gather(1, index).squeeze(dim=1)
 #             noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
-            return noise
+            return mask, noise
         
         
 class Attack(object):
@@ -102,8 +109,10 @@ class Attack(object):
                     target = None
 
                 self.reset_grad()
-                noise = self.net(img, target)
-                noise_img = img + noise
+                mask, noise = self.net(img, target)
+                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+                img_masked = img * mask + img_mean * (1 - mask)
+                noise_img = img_masked + noise
                 
                 if convert_to_uint8:
                     noise_img_uint8 = converter.float32_to_uint8(noise_img)
@@ -177,8 +186,10 @@ class Attack(object):
                     target = None
                     gt.append(label.cpu())
                     
-                noise = self.net(img, target)
-                noise_img = img + noise
+                mask, noise = self.net(img, target)
+                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+                img_masked = img * mask + img_mean * (1 - mask)
+                noise_img = img_masked + noise
                 
                 noise_img_uint8 = converter.float32_to_uint8(noise_img)
                 noise_img = converter.uint8_to_float32(noise_img_uint8)
@@ -221,8 +232,10 @@ class Attack(object):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         self.net.eval()
         with torch.no_grad():
-            noise = self.net(x, target)
-            noise_img = x + noise
+            mask, noise = self.net(img, target)
+            img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+            img_masked = img * mask + img_mean * (1 - mask)
+            noise_img = img_masked + noise
             noise_img_uint8 = converter.float32_to_uint8(noise_img)
             noise_img_uint8 = noise_img_uint8.detach().cpu().numpy().astype(np.uint8)
             noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
@@ -234,10 +247,10 @@ class Attack(object):
         else:
             target_one_hot = torch.zeros_like(pred[0])
             target_one_hot.scatter_(1, target.view(-1, 1), 1)
-            loss_cls = [(-torch.log(torch.clamp(1 - F.softmax(i, dim=1), min=1e-6)) * 
-                         target_one_hot).sum() / target_one_hot.size(0) 
-                        for i in pred]
-#             loss_cls = [(-F.log_softmax(i, dim=1) * target_one_hot).sum() / target_one_hot.size(0) for i in pred]
+#             loss_cls = [(-torch.log(torch.clamp(1 - F.softmax(i, dim=1), min=1e-6)) * 
+#                          target_one_hot).sum() / target_one_hot.size(0) 
+#                         for i in pred]
+            loss_cls = [(F.softmax(i, dim=1) * target_one_hot).sum() / target_one_hot.size(0) for i in pred]
             
         noise_img_uint8 = noise_img#(noise_img * 0.5 + 0.5) * 255
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
