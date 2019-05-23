@@ -62,13 +62,14 @@ class Classifier(object):
         else:
             raise Exception('Optimizer {} Not Exists'.format(optimizer))
 
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.opt, mode='max', factor=0.2, patience=patience)
+#         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+#             self.opt, mode='max', factor=0.2, patience=patience)
         
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None):
+    def train(self, max_epoch, epoch_size, writer=None):
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 0
         step = 1
@@ -86,21 +87,22 @@ class Classifier(object):
                 self.opt.step()
                 if writer:
                     writer.add_scalar(
+                        'lr', self.opt.param_groups[0]['lr'], global_step=step)
+                    writer.add_scalar(
                         'loss_cls', loss_cls.data, global_step=step)
                     writer.add_scalar(
                         'loss', loss.data, global_step=step)
                 step += 1
+                scheduler.step(step)
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
                 acc = self.test()
                 if writer:
                     writer.add_scalar(
-                        'lr', self.opt.param_groups[0]['lr'], global_step=epoch)
-                    writer.add_scalar(
                         'acc', acc, global_step=epoch)
                     score = acc
                 
-                self.scheduler.step(score)
+#                 self.scheduler.step(score)
                 if best_score < score:
                     best_score = score
                     self.save_model(self.checkpoint_dir)
