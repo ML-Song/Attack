@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} weight: {}'.format(targeted, weight)
-    comment = 'Attack targeted: {} weight: {}'.format(targeted, weight)
+    checkpoint_name = 'Attack targeted: {}'.format(targeted, weight)
+    comment = 'Attack targeted: {}'.format(targeted, weight)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -62,7 +62,7 @@ if __name__ == '__main__':
 
     unet = UNet(n_classes=2 * num_classes * 3)
     attack_net = AttackNet(unet)
-    solver = Attack(attack_net, classifier, train_loader, test_loader, test_batch_size, num_classes=num_classes, weight=weight, 
+    solver = Attack(attack_net, classifier, train_loader, test_loader, test_batch_size, num_classes=num_classes, 
                         lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer, targeted=targeted)
     if checkpoint_path:
         solver.load_model(checkpoint_path)

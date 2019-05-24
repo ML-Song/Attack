@@ -25,6 +25,9 @@ class AttackNet(nn.Module):
         mask = out[:, 0]
         noise = out[:, 1]
         
+        mask = mask.view(n, -1, self.out_channels, h, w)
+        noise = noise.view(n, -1, self.out_channels, h, w)
+        
         label_index = label.view(-1, 1, 1, 1, 1)
         label_index = label_index.repeat(1, 1, self.out_channels, h, w)
         
@@ -36,7 +39,11 @@ class AttackNet(nn.Module):
         mask_max = mask.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
         mask = (mask - mask_min) / (mask_max - mask_min)
         mask = torch.sigmoid(5 * (mask - 0.5))
+        
         noise = noise.gather(1, target_index).squeeze(dim=1)
+        noise_min = noise.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
+        noise_max = noise.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
+        noise = (noise - noise_min) / (noise_max - noise_min) - 0.5
         return mask, noise
 #         if target is None:
 #             return mask, noise
@@ -56,7 +63,7 @@ class AttackNet(nn.Module):
         
 class Attack(object):
     def __init__(self, net, classifier=None, train_loader=None, test_loader=None, batch_size=None, gain=None, 
-                 optimizer='sgd', lr=1e-3, patience=5, interval=1, img_size=(299, 299), weight=1, 
+                 optimizer='sgd', lr=1e-3, patience=5, interval=1, img_size=(299, 299), 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], targeted=True, num_classes=110):
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -70,7 +77,6 @@ class Attack(object):
         self.targeted = targeted
         self.img_size = img_size
         self.num_classes = num_classes
-        self.weight = weight
         
         if not os.path.exists(checkpoint_dir):
             os.mkdir(checkpoint_dir)
@@ -139,7 +145,7 @@ class Attack(object):
                 
                 loss_cls, loss_noise = self.get_loss(cls, target if self.targeted else label, noise_img, img)
                 
-                loss = sum(loss_cls) / len(loss_cls) + loss_noise * self.weight
+                loss = sum(loss_cls) / len(loss_cls) * 64 + loss_noise
                 
                 loss.backward()
                 self.opt.step()
@@ -198,7 +204,7 @@ class Attack(object):
             noise_imgs = []
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
-                label = data[1]
+                label = data[1].cuda()
                 if self.targeted:
                     if len(data) == 2:
                         target = torch.randint_like(label, 0, self.num_classes).cuda()
@@ -271,7 +277,18 @@ class Attack(object):
     
     def get_loss(self, pred, target, noise_img, img):
         if self.targeted:
-            loss_cls = [F.cross_entropy(i, target) for i in pred]
+            target_one_hot = torch.zeros_like(pred[0])
+            target_one_hot.scatter_(1, target.view(-1, 1), 1)
+            loss_cls = []
+            for p in pred:
+                prob = F.softmax(p, dim=1)
+                prob_gt = prob.gather(1, target.view(-1, 1))
+                prob_max = prob.clone()
+                prob_max[target_one_hot.type(torch.uint8)] = 0
+                prob_max = prob_max.max(dim=1)[0]
+                prob_delta = prob_gt - prob_max
+                loss_cls.append(1 - torch.sigmoid(10 * prob_delta).mean())
+#             loss_cls = [F.cross_entropy(i, target) for i in pred]
         else:
             target_one_hot = torch.zeros_like(pred[0])
             target_one_hot.scatter_(1, target.view(-1, 1), 1)
@@ -289,11 +306,13 @@ class Attack(object):
 #                         for i in pred]
 #             loss_cls = [(F.softmax(i, dim=1) * target_one_hot).sum() / target_one_hot.size(0) for i in pred]
             
-        noise_img_uint8 = noise_img#(noise_img * 0.5 + 0.5) * 255
+        noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
+#         noise_img_uint8 = torch.clamp(noise_img_uint8, min=0, max=255)
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
         
-        img_uint8 = img#(img * 0.5 + 0.5) * 255
+        img_uint8 = (img * 0.5 + 0.5) * 255
         img_uint8 = F.interpolate(img_uint8, self.img_size, mode='bilinear', align_corners=True)
         
         loss_noise = F.mse_loss(noise_img_uint8, img_uint8)# / 64.
+        loss_noise = torch.sqrt(loss_noise)
         return loss_cls, loss_noise
