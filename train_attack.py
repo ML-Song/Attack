@@ -55,7 +55,7 @@ if __name__ == '__main__':
     test_loader = torch.utils.data.DataLoader(dataset=test_dataset, num_workers=16, batch_size=test_batch_size,
                                               shuffle=True, drop_last=False)
     
-    model = [pretrainedmodels.__dict__[i]() for i in classifier_name]
+    model = [pretrainedmodels.__dict__[i](pretrained=None) for i in classifier_name]
     classifier = [ClassifierNet(i, num_classes) for i in model]
     for c, p in zip(classifier, classifier_path):
         c.load_state_dict(torch.load(p).state_dict())

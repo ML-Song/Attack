@@ -35,15 +35,16 @@ class AttackNet(nn.Module):
         target_index = target_index.repeat(1, 1, self.out_channels, h, w)
 
         mask = mask.gather(1, label_index).squeeze(dim=1)
+#         mask = torch.sigmoid(mask)
         mask_min = mask.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
         mask_max = mask.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
         mask = (mask - mask_min) / (mask_max - mask_min)
-        mask = torch.sigmoid(5 * (mask - 0.5))
+        mask = torch.sigmoid(10 * (mask - 0.5))
         
         noise = noise.gather(1, target_index).squeeze(dim=1)
         noise_min = noise.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
         noise_max = noise.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
-        noise = (noise - noise_min) / (noise_max - noise_min) - 0.5
+        noise = ((noise - noise_min) / (noise_max - noise_min) - 0.5) * 2
         return mask, noise
 #         if target is None:
 #             return mask, noise
@@ -83,17 +84,20 @@ class Attack(object):
             
         self.net_single = net
         self.classifier_single = classifier
-        for i in self.classifier_single:
-            i.eval()
+        if isinstance(classifier, list):
+            for i in self.classifier_single:
+                i.eval()
 
         if len(devices) == 0:
             pass
         elif len(devices) == 1:
             self.net = self.net_single.cuda()
-            self.classifier = [i.cuda() for i in self.classifier_single]
+            if isinstance(classifier, list):
+                self.classifier = [i.cuda() for i in self.classifier_single]
         else:
             self.net = nn.DataParallel(self.net_single, device_ids=range(len(devices))).cuda()
-            self.classifier = [nn.DataParallel(i, device_ids=range(len(devices))).cuda() for i in self.classifier_single]
+            if isinstance(classifier, list):
+                self.classifier = [nn.DataParallel(i, device_ids=range(len(devices))).cuda() for i in self.classifier_single]
             
         if gain is not None:
             self.gain = gain
@@ -135,6 +139,8 @@ class Attack(object):
                 mask, noise = self.net(img, label, target)
                 img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
                 img_masked = img * mask + img_mean * (1 - mask)
+                if self.targeted:
+                    noise = noise * mask
                 noise_img = img_masked + noise
                 
                 if convert_to_uint8:
@@ -145,7 +151,7 @@ class Attack(object):
                 
                 loss_cls, loss_noise = self.get_loss(cls, target if self.targeted else label, noise_img, img)
                 
-                loss = sum(loss_cls) / len(loss_cls) * 64 + loss_noise
+                loss = sum(loss_cls) / len(loss_cls) * 64# + loss_noise
                 
                 loss.backward()
                 self.opt.step()
@@ -277,18 +283,18 @@ class Attack(object):
     
     def get_loss(self, pred, target, noise_img, img):
         if self.targeted:
-            target_one_hot = torch.zeros_like(pred[0])
-            target_one_hot.scatter_(1, target.view(-1, 1), 1)
-            loss_cls = []
-            for p in pred:
-                prob = F.softmax(p, dim=1)
-                prob_gt = prob.gather(1, target.view(-1, 1))
-                prob_max = prob.clone()
-                prob_max[target_one_hot.type(torch.uint8)] = 0
-                prob_max = prob_max.max(dim=1)[0]
-                prob_delta = prob_gt - prob_max
-                loss_cls.append(1 - torch.sigmoid(10 * prob_delta).mean())
-#             loss_cls = [F.cross_entropy(i, target) for i in pred]
+#             target_one_hot = torch.zeros_like(pred[0])
+#             target_one_hot.scatter_(1, target.view(-1, 1), 1)
+#             loss_cls = []
+#             for p in pred:
+#                 prob = F.softmax(p, dim=1)
+#                 prob_gt = prob.gather(1, target.view(-1, 1))
+#                 prob_max = prob.clone()
+#                 prob_max[target_one_hot.type(torch.uint8)] = 0
+#                 prob_max = prob_max.max(dim=1)[0]
+#                 prob_delta = prob_gt - prob_max
+#                 loss_cls.append(1 - torch.sigmoid(10 * prob_delta).mean())
+            loss_cls = [F.cross_entropy(i, target) for i in pred]
         else:
             target_one_hot = torch.zeros_like(pred[0])
             target_one_hot.scatter_(1, target.view(-1, 1), 1)
