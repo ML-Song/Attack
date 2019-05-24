@@ -23,12 +23,14 @@ if __name__ == '__main__':
     
     train_transform = tv.transforms.Compose([
         tv.transforms.Resize(image_size),
+        tv.transforms.RandomCrop(crop_size),
         tv.transforms.ToTensor(),
         normalize, 
     ])
 
     test_transform = tv.transforms.Compose([
         tv.transforms.Resize(image_size),
+        tv.transforms.CenterCrop(crop_size),
         tv.transforms.ToTensor(),
         normalize, 
     ])
