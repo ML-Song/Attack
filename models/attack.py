@@ -2,6 +2,7 @@
 import os
 import tqdm
 import torch
+import numpy as np
 from torch import nn
 import torchvision as tv
 from sklearn import metrics
@@ -39,7 +40,7 @@ class AttackNet(nn.Module):
         mask_min = mask.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
         mask_max = mask.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
         mask = (mask - mask_min) / (mask_max - mask_min)
-        mask = torch.sigmoid(10 * (mask - 0.5))
+        mask = torch.sigmoid(5 * (mask - 0.5))
         
         noise = noise.gather(1, target_index).squeeze(dim=1)
         noise_min = noise.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
@@ -64,7 +65,7 @@ class AttackNet(nn.Module):
         
 class Attack(object):
     def __init__(self, net, classifier=None, train_loader=None, test_loader=None, batch_size=None, gain=None, 
-                 optimizer='sgd', lr=1e-3, patience=5, interval=1, img_size=(299, 299), 
+                 optimizer='sgd', lr=1e-3, patience=5, interval=1, img_size=(299, 299), transfrom=None, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], targeted=True, num_classes=110):
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -78,6 +79,15 @@ class Attack(object):
         self.targeted = targeted
         self.img_size = img_size
         self.num_classes = num_classes
+        
+        if transfrom is None:
+            self.transfrom = tv.transforms.Compose([
+                tv.transforms.Resize((224, 224)),
+                tv.transforms.ToTensor(),
+                tv.transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            ])
+        else:
+            self.transfrom = transfrom
         
         if not os.path.exists(checkpoint_dir):
             os.mkdir(checkpoint_dir)
@@ -270,15 +280,18 @@ class Attack(object):
     
     def predict(self, img, label, target):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
+        label_tensor = torch.tensor(label).cuda()
+        target_tensor = torch.tensor(target).cuda()
         self.net.eval()
         with torch.no_grad():
-            mask, noise = self.net(img, label, target)
-            img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-            img_masked = img * mask + img_mean * (1 - mask)
+            mask, noise = self.net(x, label_tensor, target_tensor)
+            img_mean = x.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
+            img_masked = x * mask + img_mean * (1 - mask)
             noise_img = img_masked + noise
             noise_img_uint8 = converter.float32_to_uint8(noise_img)
-            noise_img_uint8 = noise_img_uint8.detach().cpu().numpy().astype(np.uint8)
+            noise_img_uint8 = noise_img_uint8.detach()
             noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
+            noise_img_uint8 = noise_img_uint8.cpu().numpy().astype(np.uint8)
         return noise_img_uint8
     
     def get_loss(self, pred, target, noise_img, img):
