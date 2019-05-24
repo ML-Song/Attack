@@ -292,6 +292,7 @@ class Attack(object):
             noise_img_uint8 = noise_img_uint8.detach()
             noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
             noise_img_uint8 = noise_img_uint8.cpu().numpy().astype(np.uint8)
+            noise_img_uint8 = np.transpose(noise_img_uint8, (0, 2, 3, 1))
         return noise_img_uint8
     
     def get_loss(self, pred, target, noise_img, img):
