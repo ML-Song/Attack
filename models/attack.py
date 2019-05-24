@@ -5,6 +5,7 @@ import torch
 from torch import nn
 import torchvision as tv
 from sklearn import metrics
+import torchvision.utils as vutils
 from torch.nn import functional as F
 
 from utils import converter
@@ -16,25 +17,41 @@ class AttackNet(nn.Module):
         self.backbone = backbone
         self.out_channels = out_channels
         
-    def forward(self, x, target=None):
+    def forward(self, x, label, target):
         n, c, h, w = x.shape
         out = self.backbone(x)
         out = out.view(n, 2, -1, h, w)
-        mask = torch.sigmoid(out[:, 0])
+        
+        mask = out[:, 0]
         noise = out[:, 1]
-        if target is None:
-            return mask, noise
-        else:
-            index = target.view(-1, 1, 1, 1, 1)
-            index = index.repeat(1, 1, self.out_channels, h, w)
+        
+        label_index = label.view(-1, 1, 1, 1, 1)
+        label_index = label_index.repeat(1, 1, self.out_channels, h, w)
+        
+        target_index = target.view(-1, 1, 1, 1, 1)
+        target_index = target_index.repeat(1, 1, self.out_channels, h, w)
+
+        mask = mask.gather(1, label_index).squeeze(dim=1)
+        mask_min = mask.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
+        mask_max = mask.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
+        mask = (mask - mask_min) / (mask_max - mask_min)
+        mask = torch.sigmoid(5 * (mask - 0.5))
+        noise = noise.gather(1, target_index).squeeze(dim=1)
+        return mask, noise
+#         if target is None:
+#             return mask, noise
+#         else:
+#             index = target.view(-1, 1, 1, 1, 1)
+#             index = index.repeat(1, 1, self.out_channels, h, w)
             
-            mask = mask.view(n, -1, self.out_channels, h, w)
-            mask = mask.gather(1, index).squeeze(dim=1)
+#             mask = mask.view(n, -1, self.out_channels, h, w)
+#             mask = mask.gather(1, index).squeeze(dim=1)
             
-            noise = noise.view(n, -1, self.out_channels, h, w)
-            noise = noise.gather(1, index).squeeze(dim=1)
-#             noise = torch.cat([noise[i, batch_y[i]].unsqueeze(0) for i in range(n)], dim=0)
-            return mask, noise
+#             noise = noise.view(n, -1, self.out_channels, h, w)
+#             noise = noise.gather(1, index).squeeze(dim=1)
+#             mask = torch.cat([mask[i, label[i]].unsqueeze(0) for i in range(n)], dim=0)
+#             noise = torch.cat([noise[i, target[i]].unsqueeze(0) for i in range(n)], dim=0)
+#             return mask, noise
         
         
 class Attack(object):
@@ -106,10 +123,10 @@ class Attack(object):
                     else:
                         target = data[2].cuda()
                 else:
-                    target = None
+                    target = label
 
                 self.reset_grad()
-                mask, noise = self.net(img, target)
+                mask, noise = self.net(img, label, target)
                 img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
                 img_masked = img * mask + img_mean * (1 - mask)
                 noise_img = img_masked + noise
@@ -140,7 +157,7 @@ class Attack(object):
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
-                acc, perturbation = self.test()
+                acc, perturbation, imgs, noise_imgs = self.test()
                 if writer:
                     for i, (a, p) in enumerate(zip(acc, perturbation)):
                         writer.add_scalar(
@@ -161,6 +178,10 @@ class Attack(object):
                             'perturbation_mean', perturbation_mean, global_step=epoch)
                     writer.add_scalar(
                             'score', score, global_step=epoch)
+                    imgs = vutils.make_grid(imgs, normalize=True, scale_each=True)
+                    writer.add_image('Imgs', imgs, epoch)
+                    noise_imgs = vutils.make_grid(noise_imgs, normalize=True, scale_each=True)
+                    writer.add_image('Noise Imgs', noise_imgs, epoch)
                     
 #                 self.scheduler.step(score)
                 if best_score > score:
@@ -173,6 +194,8 @@ class Attack(object):
             pred = [[]] * len(self.classifier)
             gt = []
             perturbations = []
+            imgs = []
+            noise_imgs = []
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1]
@@ -183,16 +206,20 @@ class Attack(object):
                         target = data[2].cuda()
                     gt.append(target.cpu())
                 else:
-                    target = None
+                    target = label.cuda()
                     gt.append(label.cpu())
                     
-                mask, noise = self.net(img, target)
+                mask, noise = self.net(img, label, target)
                 img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
                 img_masked = img * mask + img_mean * (1 - mask)
                 noise_img = img_masked + noise
                 
                 noise_img_uint8 = converter.float32_to_uint8(noise_img)
                 noise_img = converter.uint8_to_float32(noise_img_uint8)
+                
+                if batch_idx < 4:
+                    imgs.append(img.cpu())
+                    noise_imgs.append(noise_img.cpu())
                 
                 perturbation = noise_img_uint8 - converter.float32_to_uint8(img)
                 perturbation = F.interpolate(perturbation, self.img_size, mode='bilinear', align_corners=True)
@@ -210,14 +237,15 @@ class Attack(object):
             pred = [torch.cat(i).numpy() for i in pred]
             gt = torch.cat(gt).numpy()
             perturbations = torch.cat(perturbations).numpy()
-            
+            imgs = torch.cat(imgs)
+            noise_imgs = torch.cat(noise_imgs)
             acc = [metrics.accuracy_score(gt, i) for i in pred]
             
             if self.targeted:
                 perturbation = [perturbations[gt == p].mean() if (gt == p).sum() > 0 else 0 for p in pred]
             else:
                 perturbation = [perturbations[gt != p].mean() if (gt != p).sum() > 0 else 0 for p in pred]
-        return acc, perturbation
+        return acc, perturbation, imgs, noise_imgs
 
     def save_model(self, checkpoint_dir, comment=None):
         if comment is None:
@@ -228,11 +256,11 @@ class Attack(object):
     def load_model(self, model_path):
         self.net_single.load_state_dict(torch.load(model_path).state_dict())
     
-    def predict(self, img, target=None):
+    def predict(self, img, label, target):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         self.net.eval()
         with torch.no_grad():
-            mask, noise = self.net(img, target)
+            mask, noise = self.net(img, label, target)
             img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
             img_masked = img * mask + img_mean * (1 - mask)
             noise_img = img_masked + noise
@@ -247,10 +275,19 @@ class Attack(object):
         else:
             target_one_hot = torch.zeros_like(pred[0])
             target_one_hot.scatter_(1, target.view(-1, 1), 1)
+            loss_cls = []
+            for p in pred:
+                prob = F.softmax(p, dim=1)
+                prob_gt = prob.gather(1, target.view(-1, 1))
+                prob_max = prob.clone()
+                prob_max[target_one_hot.type(torch.uint8)] = 0
+                prob_max = prob_max.max(dim=1)[0]
+                prob_delta = prob_max - prob_gt
+                loss_cls.append(1 - torch.sigmoid(10 * prob_delta).mean())
 #             loss_cls = [(-torch.log(torch.clamp(1 - F.softmax(i, dim=1), min=1e-6)) * 
 #                          target_one_hot).sum() / target_one_hot.size(0) 
 #                         for i in pred]
-            loss_cls = [(F.softmax(i, dim=1) * target_one_hot).sum() / target_one_hot.size(0) for i in pred]
+#             loss_cls = [(F.softmax(i, dim=1) * target_one_hot).sum() / target_one_hot.size(0) for i in pred]
             
         noise_img_uint8 = noise_img#(noise_img * 0.5 + 0.5) * 255
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)

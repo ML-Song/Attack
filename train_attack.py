@@ -1,5 +1,6 @@
 #coding=utf-8
 import os
+import math
 import torch
 import torchvision as tv
 from tensorboardX import SummaryWriter
@@ -59,11 +60,11 @@ if __name__ == '__main__':
     for c, p in zip(classifier, classifier_path):
         c.load_state_dict(torch.load(p).state_dict())
 
-    unet = UNet(n_classes=2 * (num_classes * 3 if targeted else 3))
+    unet = UNet(n_classes=2 * num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, train_loader, test_loader, test_batch_size, num_classes=num_classes, weight=weight, 
                         lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer, targeted=targeted)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        solver.train(max_epoch, writer, epoch_size=epoch_size)
+        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
