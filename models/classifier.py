@@ -68,7 +68,7 @@ class Classifier(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, epoch_size, writer=None):
+    def train(self, max_epoch, writer=None, epoch_size=10):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 0

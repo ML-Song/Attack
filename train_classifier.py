@@ -1,5 +1,6 @@
 #coding=utf-8
 import os
+import math
 import torch
 import torchvision as tv
 from tensorboardX import SummaryWriter
@@ -59,4 +60,4 @@ if __name__ == '__main__':
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        solver.train(max_epoch, writer)
+        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
