@@ -90,7 +90,7 @@ class Attack(object):
             perturbation_losses.append(loss_perturbation)
         return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
         
-    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_iteration=100, max_perturbation=20):
+    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_iteration=10, max_perturbation=20):
         for step in range(max_iteration):
             self.opt.zero_grad()
             out = self.model(original_x)
@@ -158,7 +158,7 @@ class Attack(object):
             if score < best_score:
                 best_score = best_score
                 best_result = result
-                
+                used_patience = 0
             if used_patience < self.patience:
                 used_patience += 1
             else:
