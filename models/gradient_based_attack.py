@@ -30,11 +30,12 @@ class AttackNet(nn.Module):
         
         
 class Attack(object):
-    def __init__(self, classifiers, input_size=(224, 224), output_size=(299, 299), 
+    def __init__(self, classifiers, patience=5, input_size=(224, 224), output_size=(299, 299), 
                  transfrom=None, device='cpu'):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
+        self.patience = patience
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -78,6 +79,7 @@ class Attack(object):
             img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
 
             loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
+            loss_perturbation = torch.clamp(loss_perturbation - max_perturbation ** 2, min=0)
             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
             loss_perturbation = loss_perturbation.mean()
 #             if targeted:
@@ -87,22 +89,40 @@ class Attack(object):
             perturbation_losses.append(loss_perturbation)
         return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
         
-    def predict(self, img, label, targeted, max_iteration=1000, max_perturbation=20, lr=3):
-        label_tensor = torch.tensor(label)
+    def predict(self, img, label, targeted, lr=10, max_perturbation=0):
         original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
-        model_single = AttackNet(original_x.shape)
-        opt = torch.optim.SGD(model_single.parameters(), lr=lr)
+        label_tensor = torch.tensor(label)
+        self.model_single = AttackNet(original_x.shape)
         if self.device == 'cpu':
-            model = model_single
+            self.model = self.model_single
         elif self.device == 'cuda':
-            model = model_single.cuda()
+            self.model = self.model_single.cuda()
             label_tensor = label_tensor.cuda()
         else:
             raise Exception('Device {} Not Found!'.format(device))
-            
+        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr)
+        
+        used_patience = 0
+        best_score = 255
+        best_result = None
+        while True:
+            result = self.update_one_step(original_x, label_tensor, targeted, lr, max_perturbation=max_perturbation)
+            score = self.get_score(result, img, label, targeted)
+            print(score)
+            if score < best_score:
+                best_score = best_score
+                best_result = result
+                
+            if used_patience < self.patience:
+                used_patience += 1
+            else:
+                break
+        return best_result
+        
+    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_iteration=100, max_perturbation=20):
         for step in range(max_iteration):
-            opt.zero_grad()
-            out = model(original_x)
+            self.opt.zero_grad()
+            out = self.model(original_x)
             out = F.interpolate(out, self.input_size, mode='bilinear', align_corners=True)
             cls = [i(out) for i in self.classifiers]
             loss_cls, loss_perturbation = self.get_loss(cls, label_tensor, 
@@ -112,10 +132,10 @@ class Attack(object):
 #             if step % (max_iteration / 10) == 0:
 #                 print([j.argmax(dim=1).data for j in cls], loss_cls.data, loss_perturbation.data)
             loss.backward()
-            model.renorm_grad(lr=lr)
-            opt.step()
+            self.model.renorm_grad(lr=lr)
+            self.opt.step()
             
-        noise_img = model(original_x)
+        noise_img = self.model(original_x)
         noise_img_uint8 = converter.float32_to_uint8(noise_img)
         noise_img_uint8 = noise_img_uint8.detach()
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
@@ -125,7 +145,7 @@ class Attack(object):
         noise_img_pil = [Image.fromarray(i) for i in noise_img_uint8]
         return noise_img_pil
     
-    def get_score(self, noise_img, img, label):
+    def get_score(self, noise_img, img, label, targeted):
         label_tensor = torch.tensor(label)
         noise_img = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in noise_img], dim=0).cuda()
         original_img = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0)
@@ -135,7 +155,11 @@ class Attack(object):
                                      mode='bilinear', 
                                      align_corners=True)).detach().cpu() for c in self.classifiers]
         noise_img = noise_img.cpu()
-        acc = [(c.argmax(dim=1) == label_tensor).type(torch.float32).mean() for c in noise_cls]
-        l2_distance = noise_img - original_img
+        if targeted:
+            acc = [(c.argmax(dim=1) != label_tensor).type(torch.float32).mean() for c in noise_cls]
+        else:
+            acc = [(c.argmax(dim=1) == label_tensor).type(torch.float32).mean() for c in noise_cls]
+        l2_distance = converter.float32_to_uint8(noise_img) - converter.float32_to_uint8(original_img)
         l2_distance = torch.sqrt((l2_distance ** 2).mean())
-        return acc, l2_distance
+        print(acc, l2_distance)
+        return sum(acc) / len(acc) * 64 + l2_distance#, acc, l2_distance
