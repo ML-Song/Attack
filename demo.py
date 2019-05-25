@@ -18,11 +18,13 @@ if __name__ == '__main__':
     for c, p in zip(classifiers, classifier_path):
         c.load_state_dict(torch.load(p))
         
-    img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')][: 16]
+    solver = Attack(classifiers, device='cuda', patience=2)
+    img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')]
     target = [1] * len(img)
     result = []
-    for i in range(math.ceil(len(img) / 16)):
-        batch_x = img[i * 16: (i + 1) * 16]
-        batch_y = target[i * 16: (i + 1) * 16]
-        solver = Attack(classifiers, device='cuda', patience=2)
-        result.extend(solver.predict(img, target, True))
+    for i in range(math.ceil(len(img) / batch_size)):
+        torch.cuda.empty_cache()
+        batch_x = img[i * batch_size: (i + 1) * batch_size]
+        batch_y = target[i * batch_size: (i + 1) * batch_size]
+        result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=10))
+        
