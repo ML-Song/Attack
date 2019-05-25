@@ -2,6 +2,7 @@
 import os
 import math
 import glob
+import tqdm
 import torch
 from PIL import Image
 
@@ -22,9 +23,9 @@ if __name__ == '__main__':
     img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')]
     target = [1] * len(img)
     result = []
-    for i in range(math.ceil(len(img) / batch_size)):
+    epoch = math.ceil(len(img) / batch_size)
+    for i in tqdm.tqdm(range(epoch), total=epoch):
         torch.cuda.empty_cache()
         batch_x = img[i * batch_size: (i + 1) * batch_size]
         batch_y = target[i * batch_size: (i + 1) * batch_size]
         result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=10))
-        
