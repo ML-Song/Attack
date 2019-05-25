@@ -1,5 +1,6 @@
 #coding=utf-8
 import os
+import cv2
 import tqdm
 import torch
 import numpy as np
@@ -11,6 +12,16 @@ import torchvision.utils as vutils
 from torch.nn import functional as F
 
 from utils import converter
+
+
+def gaussian_kernel_2d_opencv(kernel_size=3, sigma=0):
+    kx = cv2.getGaussianKernel(kernel_size, sigma)
+    ky = cv2.getGaussianKernel(kernel_size, sigma)
+    g = np.multiply(kx, np.transpose(ky))
+    kernel = np.array([np.array([g, np.zeros_like(g), np.zeros_like(g)]), 
+              np.array([np.zeros_like(g), g, np.zeros_like(g)]), 
+              np.array([np.zeros_like(g), np.zeros_like(g), g])])
+    return kernel.astype(np.float32)
 
 
 class AttackNet(nn.Module):
@@ -31,12 +42,13 @@ class AttackNet(nn.Module):
         
 class Attack(object):
     def __init__(self, classifiers, patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
-                 transfrom=None, device='cpu'):
+                 transfrom=None, device='cpu', weight=64):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
         self.patience = patience
         self.max_iteration = max_iteration
+        self.weight = weight
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -72,7 +84,7 @@ class Attack(object):
                 loss_cls = -F.cross_entropy(p, target, reduction='none')
 #                 loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
             loss_cls = loss_cls.mean()
-            cls_losses.append(loss_cls * 5)
+            cls_losses.append(loss_cls * self.weight)
             
             noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
             noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
@@ -83,19 +95,28 @@ class Attack(object):
             loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
             loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0)
-            loss_perturbation = loss_perturbation.mean()
-#             if targeted:
-#                 loss_perturbation = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
-#             else:
-#                 loss_perturbation = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
+#             loss_perturbation = loss_perturbation.mean()
+            if targeted:
+                loss_perturbation = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
+            else:
+                loss_perturbation = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
             perturbation_losses.append(loss_perturbation)
         return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
         
-    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20):
+    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20, use_post_process=True):
         for step in range(self.max_iteration):
             self.opt.zero_grad()
             out = self.model(original_x)
             out = F.interpolate(out, self.input_size, mode='bilinear', align_corners=True)
+            if use_post_process:
+                kernel_size = 5
+                kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size))
+                if self.device == 'cuda':
+                    kernel = kernel.cuda()
+                out_processed = F.conv2d(out, kernel, padding=kernel_size//2)
+                out = torch.cat([out, out_processed], dim=0)
+                label_tensor = torch.cat([label_tensor, label_tensor], dim=0)
+                
             cls = [i(out) for i in self.classifiers]
             loss_cls, loss_perturbation = self.get_loss(cls, label_tensor, 
                                                  out, original_x, targeted=targeted, 
