@@ -61,5 +61,6 @@ if __name__ == '__main__':
                         lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
+        print('load success')
     with SummaryWriter(comment=comment) as writer:
         solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))

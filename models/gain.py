@@ -220,12 +220,12 @@ class GAINSolver(object):
 
     def save_model(self, checkpoint_dir, comment=None):
         if comment is None:
-            torch.save(self.net_single, '{}/best_model_{}.pt'.format(checkpoint_dir, self.checkpoint_name))
+            torch.save(self.net_single.state_dict(), '{}/best_model_{}.pt'.format(checkpoint_dir, self.checkpoint_name))
         else:
-            torch.save(self.net_single, '{}/best_model_{}_{}.pt'.format(checkpoint_dir, self.checkpoint_name, comment))
+            torch.save(self.net_single.state_dict(), '{}/best_model_{}_{}.pt'.format(checkpoint_dir, self.checkpoint_name, comment))
             
     def load_model(self, model_path):
-        self.net_single.load_state_dict(torch.load(model_path).state_dict())
+        self.net_single.load_state_dict(torch.load(model_path))
     
     def predict(self, img, target=None, out_size=(299, 299)):
         if isinstance(img, list):
