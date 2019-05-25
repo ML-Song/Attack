@@ -30,12 +30,13 @@ class AttackNet(nn.Module):
         
         
 class Attack(object):
-    def __init__(self, classifiers, patience=5, input_size=(224, 224), output_size=(299, 299), 
+    def __init__(self, classifiers, patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
                  transfrom=None, device='cpu'):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
         self.patience = patience
+        self.max_iteration = max_iteration
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -90,8 +91,8 @@ class Attack(object):
             perturbation_losses.append(loss_perturbation)
         return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
         
-    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_iteration=10, max_perturbation=20):
-        for step in range(max_iteration):
+    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20):
+        for step in range(self.max_iteration):
             self.opt.zero_grad()
             out = self.model(original_x)
             out = F.interpolate(out, self.input_size, mode='bilinear', align_corners=True)
