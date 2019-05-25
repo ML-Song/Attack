@@ -70,6 +70,7 @@ class Attack(object):
             else:
                 loss_cls = -F.cross_entropy(p, target, reduction='none')
 #                 loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
+            loss_cls = loss_cls.mean()
             cls_losses.append(loss_cls * 5)
             
             noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
@@ -88,36 +89,6 @@ class Attack(object):
 #                 loss_perturbation = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
             perturbation_losses.append(loss_perturbation)
         return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
-        
-    def predict(self, img, label, targeted, lr=10, max_perturbation=0):
-        original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
-        label_tensor = torch.tensor(label)
-        self.model_single = AttackNet(original_x.shape)
-        if self.device == 'cpu':
-            self.model = self.model_single
-        elif self.device == 'cuda':
-            self.model = self.model_single.cuda()
-            label_tensor = label_tensor.cuda()
-        else:
-            raise Exception('Device {} Not Found!'.format(device))
-        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr)
-        
-        used_patience = 0
-        best_score = 255
-        best_result = None
-        while True:
-            result = self.update_one_step(original_x, label_tensor, targeted, lr, max_perturbation=max_perturbation)
-            score = self.get_score(result, img, label, targeted)
-            print(score)
-            if score < best_score:
-                best_score = best_score
-                best_result = result
-                
-            if used_patience < self.patience:
-                used_patience += 1
-            else:
-                break
-        return best_result
         
     def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_iteration=100, max_perturbation=20):
         for step in range(max_iteration):
@@ -163,3 +134,33 @@ class Attack(object):
         l2_distance = torch.sqrt((l2_distance ** 2).mean())
         print(acc, l2_distance)
         return sum(acc) / len(acc) * 64 + l2_distance#, acc, l2_distance
+    
+    def predict(self, img, label, targeted, lr=10, max_perturbation=0):
+        original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
+        label_tensor = torch.tensor(label)
+        self.model_single = AttackNet(original_x.shape)
+        if self.device == 'cpu':
+            self.model = self.model_single
+        elif self.device == 'cuda':
+            self.model = self.model_single.cuda()
+            label_tensor = label_tensor.cuda()
+        else:
+            raise Exception('Device {} Not Found!'.format(device))
+        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr)
+        
+        used_patience = 0
+        best_score = 255
+        best_result = None
+        while True:
+            result = self.update_one_step(original_x, label_tensor, targeted, lr, max_perturbation=max_perturbation)
+            score = self.get_score(result, img, label, targeted)
+            print(score)
+            if score < best_score:
+                best_score = best_score
+                best_result = result
+                
+            if used_patience < self.patience:
+                used_patience += 1
+            else:
+                break
+        return best_result
