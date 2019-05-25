@@ -80,8 +80,8 @@ class Attack(object):
             img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
 
             loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
-            loss_perturbation = torch.clamp(loss_perturbation - max_perturbation ** 2, min=0)
             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
+            loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0)
             loss_perturbation = loss_perturbation.mean()
 #             if targeted:
 #                 loss_perturbation = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
