@@ -28,5 +28,5 @@ if __name__ == '__main__':
         torch.cuda.empty_cache()
         batch_x = img[i * batch_size: (i + 1) * batch_size]
         batch_y = target[i * batch_size: (i + 1) * batch_size]
-        result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=10))
+        result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=10, lr=lr))
         
