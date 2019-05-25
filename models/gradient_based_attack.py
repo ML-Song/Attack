@@ -4,6 +4,7 @@ import tqdm
 import torch
 import numpy as np
 from torch import nn
+from PIL import Image
 import torchvision as tv
 from sklearn import metrics
 import torchvision.utils as vutils
@@ -64,11 +65,11 @@ class Attack(object):
         for p in preds:
             if targeted:
                 loss_cls = F.cross_entropy(p, target, reduction='none')
-                loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
+#                 loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
             else:
                 loss_cls = -F.cross_entropy(p, target, reduction='none')
-                loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
-            cls_losses.append(loss_cls)
+#                 loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
+            cls_losses.append(loss_cls * 5)
             
             noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
             noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
@@ -77,7 +78,7 @@ class Attack(object):
             img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
 
             loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
-            loss_perturbation = torch.sqrt(loss_perturbation.sum(dim=1))
+            loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
             loss_perturbation = loss_perturbation.mean()
 #             if targeted:
 #                 loss_perturbation = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
@@ -91,7 +92,6 @@ class Attack(object):
         original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         model_single = AttackNet(original_x.shape)
         opt = torch.optim.SGD(model_single.parameters(), lr=lr)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, max_iteration)
         if self.device == 'cpu':
             model = model_single
         elif self.device == 'cuda':
@@ -109,12 +109,11 @@ class Attack(object):
                                                  out, original_x, targeted=targeted, 
                                                  max_perturbation=max_perturbation)
             loss = loss_cls + loss_perturbation
-            if step % (max_iteration / 10) == 0:
-                print([j.argmax(dim=1).data for j in cls], loss_cls.data, loss_perturbation.data)
+#             if step % (max_iteration / 10) == 0:
+#                 print([j.argmax(dim=1).data for j in cls], loss_cls.data, loss_perturbation.data)
             loss.backward()
-#             model.renorm_grad(lr=lr)
+            model.renorm_grad(lr=lr)
             opt.step()
-            scheduler.step(step)
             
         noise_img = model(original_x)
         noise_img_uint8 = converter.float32_to_uint8(noise_img)
@@ -122,4 +121,21 @@ class Attack(object):
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
         noise_img_uint8 = noise_img_uint8.cpu().numpy().astype(np.uint8)
         noise_img_uint8 = np.transpose(noise_img_uint8, (0, 2, 3, 1))
-        return noise_img_uint8
+        
+        noise_img_pil = [Image.fromarray(i) for i in noise_img_uint8]
+        return noise_img_pil
+    
+    def get_score(self, noise_img, img, label):
+        label_tensor = torch.tensor(label)
+        noise_img = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in noise_img], dim=0).cuda()
+        original_img = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0)
+            
+        noise_cls = [c(F.interpolate(noise_img, 
+                                     self.input_size, 
+                                     mode='bilinear', 
+                                     align_corners=True)).detach().cpu() for c in self.classifiers]
+        noise_img = noise_img.cpu()
+        acc = [(c.argmax(dim=1) == label_tensor).type(torch.float32).mean() for c in noise_cls]
+        l2_distance = noise_img - original_img
+        l2_distance = torch.sqrt((l2_distance ** 2).mean())
+        return acc, l2_distance
