@@ -108,20 +108,23 @@ class Attack(object):
             self.opt.zero_grad()
             out = self.model(original_x)
             out = F.interpolate(out, self.input_size, mode='bilinear', align_corners=True)
+            cls = [i(out) for i in self.classifiers]
+            loss_cls, loss_perturbation = self.get_loss(cls, label_tensor, 
+                                                 out, original_x, targeted=targeted, 
+                                                 max_perturbation=max_perturbation)
+            loss = loss_cls + loss_perturbation
             if use_post_process:
                 kernel_size = 5
                 kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size))
                 if self.device == 'cuda':
                     kernel = kernel.cuda()
                 out_processed = F.conv2d(out, kernel, padding=kernel_size//2)
-                out = torch.cat([out, out_processed], dim=0)
-                label_tensor = torch.cat([label_tensor, label_tensor], dim=0)
                 
-            cls = [i(out) for i in self.classifiers]
-            loss_cls, loss_perturbation = self.get_loss(cls, label_tensor, 
-                                                 out, original_x, targeted=targeted, 
-                                                 max_perturbation=max_perturbation)
-            loss = loss_cls + loss_perturbation
+                cls_processed = [i(out_processed) for i in self.classifiers]
+                loss_cls_processed, loss_perturbation_processed = self.get_loss(cls_processed, label_tensor, 
+                                                                                out, original_x, targeted=targeted, 
+                                                                                max_perturbation=max_perturbation)
+                loss = loss + loss_cls_processed + loss_perturbation_processed
 #             if step % (max_iteration / 10) == 0:
 #                 print([j.argmax(dim=1).data for j in cls], loss_cls.data, loss_perturbation.data)
             loss.backward()

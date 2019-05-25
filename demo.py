@@ -20,7 +20,7 @@ if __name__ == '__main__':
         c.load_state_dict(torch.load(p))
         
     solver = Attack(classifiers, device='cuda', patience=2, max_iteration=30)
-    img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')]
+    img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')][: 16]
     target = [1] * len(img)
     result = []
     epoch = math.ceil(len(img) / batch_size)
@@ -28,5 +28,5 @@ if __name__ == '__main__':
         torch.cuda.empty_cache()
         batch_x = img[i * batch_size: (i + 1) * batch_size]
         batch_y = target[i * batch_size: (i + 1) * batch_size]
-        result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=10, lr=lr))
+        result.extend(solver.predict(batch_x, batch_y, True, max_perturbation=30, lr=lr))
         
