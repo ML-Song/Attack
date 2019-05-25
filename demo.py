@@ -19,7 +19,7 @@ if __name__ == '__main__':
     for c, p in zip(classifiers, classifier_path):
         c.load_state_dict(torch.load(p))
         
-    solver = Attack(classifiers, device='cuda', patience=2)
+    solver = Attack(classifiers, device='cuda', patience=2, max_iteration=30)
     img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')]
     target = [1] * len(img)
     result = []
