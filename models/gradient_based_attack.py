@@ -156,7 +156,7 @@ class Attack(object):
             score = self.get_score(result, img, label, targeted)
             print(score)
             if score < best_score:
-                best_score = best_score
+                best_score = score
                 best_result = result
                 used_patience = 0
             if used_patience < self.patience:
