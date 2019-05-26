@@ -8,5 +8,6 @@ classifier_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd.
 
 batch_size = 16
 steps = 100
+use_post_process = True
 
 num_classes = 110

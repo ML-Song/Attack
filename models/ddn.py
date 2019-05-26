@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+from utils.tools import gaussian_kernel_2d_opencv
+
 
 class DDN:
     """
@@ -49,7 +51,7 @@ class DDN:
         self.callback = callback
 
     def attack(self, model: nn.Module, inputs: torch.Tensor, labels: torch.Tensor,
-               targeted: bool = False) -> torch.Tensor:
+               targeted: bool = False, use_post_process: bool = False) -> torch.Tensor:
         """
         Performs the attack of the model for the inputs and labels.
         Parameters
@@ -88,7 +90,14 @@ class DDN:
 
             l2 = delta.data.view(batch_size, -1).norm(p=2, dim=1)
             adv = inputs + delta
-            logits = [m((adv - 0.5) * 2) for m in model]
+            if use_post_process:
+                kernel_size = 5
+                kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size)).cuda()
+                adv_processed = F.conv2d(adv, kernel, padding=kernel_size//2)
+                logits = [m((adv_processed - 0.5) * 2) for m in model]
+            else:
+                logits = [m((adv - 0.5) * 2) for m in model]
+                
             pred_labels = sum(logits).argmax(1)
             ce_loss = [F.cross_entropy(l, labels, reduction='sum') for l in logits]
             loss = multiplier * sum(ce_loss) / len(ce_loss)
@@ -138,5 +147,5 @@ class DDN:
             best_delta.renorm_(p=2, dim=0, maxnorm=self.max_norm)
             if self.quantize:
                 best_delta.mul_(self.levels - 1).round_().div_(self.levels - 1)
-
+        print('success: {}'.format(adv_found.float().mean().item()))
         return inputs + best_delta

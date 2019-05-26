@@ -53,7 +53,8 @@ if __name__ == '__main__':
         batch_x = torch.cat([transfrom(i).unsqueeze(dim=0) for i in batch_x], dim=0).cuda()
         batch_y = torch.tensor(batch_y).cuda()
         
-        result.append(attacker.attack(classifiers, batch_x, labels=batch_y, targeted=targeted).detach().cpu().data)
+        result.append(attacker.attack(classifiers, batch_x, labels=batch_y, 
+                                      targeted=targeted, use_post_process=use_post_process).detach().cpu().data)
     result = torch.cat(result).numpy()
     result = np.transpose(result, (0, 2, 3, 1))
     result = [Image.fromarray(i) for i in (result * 255).astype(np.uint8)]
