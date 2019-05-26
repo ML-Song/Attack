@@ -123,6 +123,7 @@ class DDN:
                                       [cosine, optimizer.param_groups[0]['lr'], adv_found.float().mean().item()])
 
             optimizer.step()
+#             print('success: {}'.format(adv_found.float().mean().item()))
 
             norm.mul_(1 - (2 * is_adv.float() - 1) * self.gamma)
             norm = torch.min(norm, worst_norm)
