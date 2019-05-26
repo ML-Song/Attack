@@ -43,14 +43,14 @@ class AttackNet(nn.Module):
 #         print(self.noise.grad)
         max_grad = levels / torch.clamp(self.noise.grad.abs().max(), min=1e-6, max=1)
         self.noise.grad *= max_grad
-        self.noise.grad[self.noise.grad.abs() < levels / lr] = 0
+#         self.noise.grad[self.noise.grad.abs() < levels / lr] = 0
 #         self.noise.grad = torch.clamp(self.noise.grad, min=-1, max=1)
         
         
 class Attack(object):
     def __init__(self, classifiers, test_classifiers=None, 
                  patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
-                 transfrom=None, device='cuda', weight=64, max_epoch=10, margin=0.1):
+                 transfrom=None, device='cuda', weight=64, max_epoch=10, loss_mode='margin', margin=0.1):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
@@ -58,6 +58,8 @@ class Attack(object):
         self.max_iteration = max_iteration
         self.weight = weight
         self.max_epoch = max_epoch
+        self.loss_mode = loss_mode
+        assert(self.loss_mode in ('margin', 'cross_entropy'))
         self.margin = margin
         
         if transfrom is None:
@@ -100,10 +102,10 @@ class Attack(object):
         cls_losses = []
         perturbation_losses = []
         
-        noise_img_uint8 = noise_img * 256
+        noise_img_uint8 = noise_img * 128
         noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
 
-        img_uint8 = img * 256
+        img_uint8 = img * 128
         img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
         
         loss_perturbation = torch.clamp(((img_uint8 - noise_img_uint8) ** 2).sum(dim=1), min=1e-6)
@@ -112,29 +114,34 @@ class Attack(object):
 #         print(loss_perturbation)
 #         loss_perturbation = loss_perturbation.mean()
         for p in preds:
-            prob = F.softmax(p, dim=1)
-            prob_gt = prob.gather(1, target.view(-1, 1)).view(-1)
-            prob_other_max = prob.clone()
-            prob_other_max[target_one_hot.type(torch.uint8)] = -1
-            prob_other_max = prob_other_max.max(dim=1)[0]
+            if self.loss_mode == 'margin':
+                prob = F.softmax(p, dim=1)
+                prob_gt = prob.gather(1, target.view(-1, 1)).view(-1)
+                prob_other_max = prob.clone()
+                prob_other_max[target_one_hot.type(torch.uint8)] = -1
+                prob_other_max = prob_other_max.max(dim=1)[0]
             if targeted:
-                prob_delta = prob_other_max - prob_gt + self.margin
-                loss_cls = torch.clamp(prob_delta, min=0,).sum() / target.size(0)
-#                 loss_cls = F.cross_entropy(p, target, reduction='none')
-#                 loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
+                if self.loss_mode == 'margin':
+                    prob_delta = prob_other_max - prob_gt + self.margin
+                    loss_cls = torch.clamp(prob_delta, min=0,).sum() / target.size(0)
+                elif self.loss_mode == 'cross_entropy':
+                    loss_cls = F.cross_entropy(p, target, reduction='none')
+                    loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
                 loss_noise = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
             else:
-                prob_delta = prob_gt - prob_other_max + self.margin
-                loss_cls = torch.clamp(prob_delta, min=0).sum() / target.size(0)
-#                 loss_cls = -F.cross_entropy(p, target, reduction='none')
-#                 loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
+                if self.loss_mode == 'margin':
+                    prob_delta = prob_gt - prob_other_max + self.margin
+                    loss_cls = torch.clamp(prob_delta, min=0).sum() / target.size(0)
+                elif self.loss_mode == 'cross_entropy':
+                    loss_cls = -F.cross_entropy(p, target, reduction='none')
+                    loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
                 loss_noise = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
 #             loss_cls = loss_cls.sum() / loss_cls.size(0)
             cls_losses.append(loss_cls)
             perturbation_losses.append(loss_noise)
         return sum(cls_losses) / len(cls_losses) * self.weight, sum(perturbation_losses) / len(perturbation_losses)
         
-    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20, use_post_process=True):
+    def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20, use_post_process=False):
         for step in range(self.max_iteration):
             self.opt.zero_grad()
             out = self.model(original_x)
@@ -203,8 +210,8 @@ class Attack(object):
             label_tensor = label_tensor.cuda()
         else:
             raise Exception('Device {} Not Found!'.format(device))
-        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr)#, momentum=0.9)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.max_epoch, eta_min=1)
+        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr, momentum=0.99)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, self.max_epoch)
         used_patience = 0
         best_score = 255
         best_result = None
