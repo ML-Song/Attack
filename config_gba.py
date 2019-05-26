@@ -9,6 +9,6 @@ batch_size = 16
 lr = 20
 max_perturbation = 10
 max_iteration = 10
-patience = 2
+patience = 3
 targeted = True
 data_path = 'data/dev_data/'

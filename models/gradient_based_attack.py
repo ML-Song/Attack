@@ -202,9 +202,10 @@ class Attack(object):
                 best_score = score
                 best_result = result
                 used_patience = 0
-            if used_patience < self.patience:
-                used_patience += 1
             else:
+                used_patience += 1
+                
+            if used_patience >= self.patience:
                 break
             self.scheduler.step(epoch)
         return best_result
