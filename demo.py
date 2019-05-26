@@ -19,12 +19,13 @@ if __name__ == '__main__':
     for c, p in zip(classifiers, classifier_path):
         c.load_state_dict(torch.load(p))
         
-    solver = Attack(classifiers[: 2], classifiers[2:], 
-                    device='cuda', patience=patience, max_iteration=max_iteration)
-    img = [Image.open(i) for i in glob.iglob('data/dev_data/*.png')][: 16]
-    target = [1] * len(img)
+    img = [Image.open(i) for i in glob.iglob('data/IJCAI_2019_AAAC_train/00000/*.jpg')][: 16]
+    target = [0] * len(img)
     result = []
     epoch = math.ceil(len(img) / batch_size)
+    
+    solver = Attack(classifiers[: 2], classifiers[: 2], 
+                    device='cuda', patience=2, max_iteration=max_iteration)
     for i in tqdm.tqdm(range(epoch), total=epoch):
         torch.cuda.empty_cache()
         batch_x = img[i * batch_size: (i + 1) * batch_size]

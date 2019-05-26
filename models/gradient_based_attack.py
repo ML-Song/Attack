@@ -40,7 +40,7 @@ class AttackNet(nn.Module):
         return out
     
     def renorm_grad(self, lr, levels=1/128):
-        max_grad = levels / self.noise.grad.abs().max()
+        max_grad = levels / torch.clamp(self.noise.grad.abs().max(), min=1e-6)
         self.noise.grad *= max_grad
         self.noise.grad[self.noise.grad.abs() < levels / lr] = 0
         
@@ -48,7 +48,7 @@ class AttackNet(nn.Module):
 class Attack(object):
     def __init__(self, classifiers, test_classifiers=None, 
                  patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
-                 transfrom=None, device='cuda', weight=64, max_epoch=10):
+                 transfrom=None, device='cuda', weight=128, max_epoch=10):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
@@ -97,44 +97,41 @@ class Attack(object):
         cls_losses = []
         perturbation_losses = []
         
+        noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
+        noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
+
+        img_uint8 = (img * 0.5 + 0.5) * 255
+        img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
+        
+        loss_perturbation = torch.clamp(((img_uint8 - noise_img_uint8) ** 2).sum(dim=1), min=1e-6)
+        loss_perturbation = torch.sqrt(loss_perturbation)
+        loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0).mean(dim=-1).mean(dim=-1)
+#         loss_perturbation = loss_perturbation.mean()
+            
         for p in preds:
             if targeted:
                 loss_cls = F.cross_entropy(p, target, reduction='none')
-#                 loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
+                loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
+                loss_noise = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
             else:
                 loss_cls = -F.cross_entropy(p, target, reduction='none')
-#                 loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
-            loss_cls = loss_cls.mean()
-            cls_losses.append(loss_cls * self.weight)
-            
-            noise_img_uint8 = (noise_img * 0.5 + 0.5) * 255
-            noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
-        
-            img_uint8 = (img * 0.5 + 0.5) * 255
-            img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
-
-            loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
-            loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
-#             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
-            loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0)
-#             loss_perturbation = loss_perturbation.mean()
-            if targeted:
-                loss_perturbation = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
-            else:
-                loss_perturbation = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
-            perturbation_losses.append(loss_perturbation)
-        return sum(cls_losses) / len(cls_losses), sum(perturbation_losses) / len(perturbation_losses)
+                loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
+                loss_noise = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
+#             loss_cls = loss_cls.sum() / loss_cls.size(0)
+            cls_losses.append(loss_cls)
+            perturbation_losses.append(loss_noise)
+        return sum(cls_losses) / len(cls_losses) * self.weight, sum(perturbation_losses) / len(perturbation_losses)
         
     def update_one_step(self, original_x, label_tensor, targeted, lr=10, max_perturbation=20, use_post_process=True):
         for step in range(self.max_iteration):
             self.opt.zero_grad()
             out = self.model(original_x)
             out = F.interpolate(out, self.input_size, mode='bilinear', align_corners=True)
-            cls = [i(out) for i in self.classifiers]
+            cls = [c(out) for c in self.classifiers]
             loss_cls, loss_perturbation = self.get_loss(cls, label_tensor, 
                                                  out, original_x, targeted=targeted, 
                                                  max_perturbation=max_perturbation)
-            loss = loss_cls + loss_perturbation
+            loss = loss_perturbation + loss_cls
             if use_post_process:
                 kernel_size = 5
                 kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size))
@@ -178,14 +175,13 @@ class Attack(object):
         else:
             acc = [(c.argmax(dim=1) == label_tensor).type(torch.float32).mean() for c in noise_cls]
         l2_distance = converter.float32_to_uint8(noise_img) - converter.float32_to_uint8(original_img)
-        l2_distance = torch.sqrt((l2_distance ** 2).mean())
-        print(acc, l2_distance)
+        l2_distance = torch.sqrt((l2_distance ** 2).sum(dim=1)).mean()
         return sum(acc) / len(acc) * self.weight + l2_distance#, acc, l2_distance
     
     def predict(self, img, label, targeted=False, lr=10, max_perturbation=0):
         original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         label_tensor = torch.tensor(label)
-        self.model_single = AttackNet(original_x.shape, 'randn' if targeted else 'zero')
+        self.model_single = AttackNet(original_x.shape, 'zero')
         if self.device == 'cpu':
             self.model = self.model_single
         elif self.device == 'cuda':
@@ -194,7 +190,7 @@ class Attack(object):
         else:
             raise Exception('Device {} Not Found!'.format(device))
         self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr, momentum=0.9)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.opt, [lambda epoch: (1 / 2) ** epoch])
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.opt, [lambda epoch: (2) ** epoch])
         used_patience = 0
         best_score = 255
         best_result = None
