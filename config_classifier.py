@@ -1,7 +1,7 @@
 #coding=utf-8
 
 lr = 1e-2
-devices = [3]
+devices = [2]
 image_size = (224, 224)
 crop_size = (224, 224)
 num_classes = 110

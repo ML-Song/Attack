@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {}'.format(targeted, weight)
-    comment = 'Attack targeted: {}'.format(targeted, weight)
+    checkpoint_name = 'Attack targeted: {} weight: {}'.format(targeted, weight, weight)
+    comment = 'Attack targeted: {} weight: {}'.format(targeted, weight, weight)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -58,7 +58,7 @@ if __name__ == '__main__':
     model = [pretrainedmodels.__dict__[i](pretrained=None) for i in classifier_name]
     classifier = [ClassifierNet(i, num_classes) for i in model]
     for c, p in zip(classifier, classifier_path):
-        c.load_state_dict(torch.load(p).state_dict())
+        c.load_state_dict(torch.load(p))
 
     unet = UNet(n_classes=2 * num_classes * 3)
     attack_net = AttackNet(unet)
@@ -67,4 +67,4 @@ if __name__ == '__main__':
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        solver.train(max_epoch, writer, weight=weight, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))

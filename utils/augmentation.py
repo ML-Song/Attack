@@ -30,4 +30,4 @@ class RandomBlur(object):
         self.kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size))
         
     def __call__(self, x):
-        return F.conv2d(x, self.kernel, padding=self.kernel_size//2)
+        return F.conv2d(x.unsqueeze(dim=0), self.kernel, padding=self.kernel_size//2).squeeze(dim=0)
