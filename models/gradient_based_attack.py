@@ -25,9 +25,14 @@ def gaussian_kernel_2d_opencv(kernel_size=3, sigma=0):
 
 
 class AttackNet(nn.Module):
-    def __init__(self, size):
+    def __init__(self, size, init_mode='zero'):
         super().__init__()
-        self.noise = nn.Parameter(torch.zeros(size))
+        if init_mode == 'zero':
+            self.noise = nn.Parameter(torch.zeros(size))
+        elif init_mode == 'randn':
+            self.noise = nn.Parameter(torch.randn(size) / 5)
+        else:
+            raise Exception('Init Mode {} Not Supported'.format(init_mode))
         
     def forward(self, x):
         out = self.noise + x
@@ -41,14 +46,16 @@ class AttackNet(nn.Module):
         
         
 class Attack(object):
-    def __init__(self, classifiers, patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
-                 transfrom=None, device='cpu', weight=64):
+    def __init__(self, classifiers, test_classifiers=None, 
+                 patience=5, max_iteration=10, input_size=(224, 224), output_size=(299, 299), 
+                 transfrom=None, device='cuda', weight=64, max_epoch=10):
         self.device = device
         self.input_size = input_size
         self.output_size = output_size
         self.patience = patience
         self.max_iteration = max_iteration
         self.weight = weight
+        self.max_epoch = max_epoch
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -64,11 +71,25 @@ class Attack(object):
             i.eval()
 
         if device == 'cpu':
-            pass
+            self.classifiers = self.classifiers_single
         elif device == 'cuda':
             self.classifiers = [i.cuda() for i in self.classifiers_single]
         else:
             raise Exception('Device {} Not Found!'.format(device))
+            
+        if test_classifiers is not None:
+            self.test_classifiers_single = test_classifiers
+            for i in self.test_classifiers_single:
+                i.eval()
+
+            if device == 'cpu':
+                self.test_classifiers = self.test_classifiers_single
+            elif device == 'cuda':
+                self.test_classifiers = [i.cuda() for i in self.test_classifiers_single]
+            else:
+                raise Exception('Device {} Not Found!'.format(device))
+        else:
+            self.test_classifiers = self.classifiers
             
     def get_loss(self, preds, target, noise_img, img, targeted=True, max_perturbation=20):
         target_one_hot = torch.zeros_like(preds[0])
@@ -94,6 +115,7 @@ class Attack(object):
 
             loss_perturbation = F.mse_loss(noise_img_uint8, img_uint8, reduction='none')
             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
+#             loss_perturbation = torch.sqrt(loss_perturbation.view(img_uint8.size(0), -1).mean(dim=1))
             loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0)
 #             loss_perturbation = loss_perturbation.mean()
             if targeted:
@@ -149,7 +171,7 @@ class Attack(object):
         noise_cls = [c(F.interpolate(noise_img, 
                                      self.input_size, 
                                      mode='bilinear', 
-                                     align_corners=True)).detach().cpu() for c in self.classifiers]
+                                     align_corners=True)).detach().cpu() for c in self.test_classifiers]
         noise_img = noise_img.cpu()
         if targeted:
             acc = [(c.argmax(dim=1) != label_tensor).type(torch.float32).mean() for c in noise_cls]
@@ -158,12 +180,12 @@ class Attack(object):
         l2_distance = converter.float32_to_uint8(noise_img) - converter.float32_to_uint8(original_img)
         l2_distance = torch.sqrt((l2_distance ** 2).mean())
         print(acc, l2_distance)
-        return sum(acc) / len(acc) * 64 + l2_distance#, acc, l2_distance
+        return sum(acc) / len(acc) * self.weight + l2_distance#, acc, l2_distance
     
-    def predict(self, img, label, targeted, lr=10, max_perturbation=0):
+    def predict(self, img, label, targeted=False, lr=10, max_perturbation=0):
         original_x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         label_tensor = torch.tensor(label)
-        self.model_single = AttackNet(original_x.shape)
+        self.model_single = AttackNet(original_x.shape, 'randn' if targeted else 'zero')
         if self.device == 'cpu':
             self.model = self.model_single
         elif self.device == 'cuda':
@@ -171,12 +193,12 @@ class Attack(object):
             label_tensor = label_tensor.cuda()
         else:
             raise Exception('Device {} Not Found!'.format(device))
-        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr)
-        
+        self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr, momentum=0.9)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.opt, [lambda epoch: (1 / 2) ** epoch])
         used_patience = 0
         best_score = 255
         best_result = None
-        while True:
+        for epoch in range(self.max_epoch):
             result = self.update_one_step(original_x, label_tensor, targeted, lr, max_perturbation=max_perturbation)
             score = self.get_score(result, img, label, targeted)
             print(score)
@@ -188,4 +210,5 @@ class Attack(object):
                 used_patience += 1
             else:
                 break
+            self.scheduler.step(epoch)
         return best_result

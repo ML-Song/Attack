@@ -11,6 +11,12 @@
 - tensorboardX
 - pretrainedmodels
 
+## Non Targeted Attack  
+- gradient_based_attack.py  
+
+## Targeted Attack
+
+- Not Supported Now
 
 ## 目录结构
 ```
