@@ -10,3 +10,4 @@ lr = 20
 max_perturbation = 10
 max_iteration = 10
 patience = 2
+targeted = True
