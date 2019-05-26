@@ -1,6 +1,6 @@
 #coding=utf-8
 
-lr = 1e-3
+lr = 1e-2
 devices = [3]
 image_size = (224, 224)
 num_classes = 110
@@ -13,4 +13,5 @@ classifier_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd.
 optimizer = 'sgd'
 targeted = False
 checkpoint_path = None
-weight = 4
+weight = 32
+loss_mode = ('margin', 'cross_entropy')[0]

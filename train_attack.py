@@ -63,8 +63,9 @@ if __name__ == '__main__':
     unet = UNet(n_classes=2 * num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, train_loader, test_loader, test_batch_size, num_classes=num_classes, 
-                        lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer, targeted=targeted)
+                    loss_mode=loss_mode, weight=weight, 
+                    lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer, targeted=targeted)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        solver.train(max_epoch, writer, weight=weight, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
