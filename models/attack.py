@@ -52,7 +52,8 @@ class AttackNet(nn.Module):
         
 class Attack(object):
     def __init__(self, net, classifier=None, train_loader=None, test_loader=None, batch_size=None, gain=None, 
-                 optimizer='sgd', lr=1e-3, patience=5, interval=1, img_size=(299, 299), transfrom=None, 
+                 optimizer='sgd', lr=1e-3, patience=5, interval=1, 
+                 img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], targeted=True, num_classes=110):
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -66,6 +67,8 @@ class Attack(object):
         self.targeted = targeted
         self.img_size = img_size
         self.num_classes = num_classes
+        self.loss_mode = loss_mode
+        assert(self.loss_mode in ('margin', 'cross_entropy'))
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -273,19 +276,47 @@ class Attack(object):
             noise_img_uint8 = np.transpose(noise_img_uint8, (0, 2, 3, 1))
         return noise_img_uint8
     
-    def get_loss(self, preds, target, perturbated_img, img):
-        if self.targeted:
-            loss_cls = [F.cross_entropy(p, target) for p in preds]
-        else:
-            loss_cls = [-F.cross_entropy(p, target) for p in preds]
-            
-        perturbated_img_uint8 = perturbated_img * 128
-        perturbated_img_uint8 = F.interpolate(perturbated_img_uint8, self.img_size, mode='bilinear', align_corners=True)
+    def get_loss(self, preds, target, noise_img, img, max_perturbation=10):
+        target_one_hot = torch.zeros_like(preds[0])
+        target_one_hot.scatter_(1, target.view(-1, 1), 1)
+        cls_losses = []
+        perturbation_losses = []
         
+        noise_img_uint8 = noise_img * 128
+        noise_img_uint8 = F.interpolate(noise_img_uint8, self.output_size, mode='bilinear', align_corners=True)
+
         img_uint8 = img * 128
-        img_uint8 = F.interpolate(img_uint8, self.img_size, mode='bilinear', align_corners=True)
-        loss_perturbation = torch.clamp(((img_uint8 - perturbated_img_uint8) ** 2).sum(dim=1), min=1e-6)
+        img_uint8 = F.interpolate(img_uint8, self.output_size, mode='bilinear', align_corners=True)
+        
+        loss_perturbation = torch.clamp(((img_uint8 - noise_img_uint8) ** 2).sum(dim=1), min=1e-6)
         loss_perturbation = torch.sqrt(loss_perturbation)
-#         loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0).mean(dim=-1).mean(dim=-1)
-        loss_perturbation = loss_perturbation.mean()
-        return loss_cls, loss_perturbation
+        loss_perturbation = torch.clamp(loss_perturbation - max_perturbation, min=0).mean(dim=-1).mean(dim=-1)
+#         print(loss_perturbation)
+#         loss_perturbation = loss_perturbation.mean()
+        for p in preds:
+            if self.loss_mode == 'margin':
+                prob = F.softmax(p, dim=1)
+                prob_gt = prob.gather(1, target.view(-1, 1)).view(-1)
+                prob_other_max = prob.clone()
+                prob_other_max[target_one_hot.type(torch.uint8)] = -1
+                prob_other_max = prob_other_max.max(dim=1)[0]
+            if self.targeted:
+                if self.loss_mode == 'margin':
+                    prob_delta = prob_other_max - prob_gt + self.margin
+                    loss_cls = torch.clamp(prob_delta, min=0,).sum() / target.size(0)
+                elif self.loss_mode == 'cross_entropy':
+                    loss_cls = F.cross_entropy(p, target, reduction='none')
+                    loss_cls = loss_cls[p.argmax(dim=-1) != target].sum() / target.size(0)
+                loss_noise = loss_perturbation[p.argmax(dim=-1) == target].sum() / target.size(0)
+            else:
+                if self.loss_mode == 'margin':
+                    prob_delta = prob_gt - prob_other_max + self.margin
+                    loss_cls = torch.clamp(prob_delta, min=0).sum() / target.size(0)
+                elif self.loss_mode == 'cross_entropy':
+                    loss_cls = -F.cross_entropy(p, target, reduction='none')
+                    loss_cls = loss_cls[p.argmax(dim=-1) == target].sum() / target.size(0)
+                loss_noise = loss_perturbation[p.argmax(dim=-1) != target].sum() / target.size(0)
+#             loss_cls = loss_cls.sum() / loss_cls.size(0)
+            cls_losses.append(loss_cls)
+            perturbation_losses.append(loss_noise)
+        return sum(cls_losses) / len(cls_losses) * self.weight, sum(perturbation_losses) / len(perturbation_losses)
