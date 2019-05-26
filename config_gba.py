@@ -11,3 +11,4 @@ max_perturbation = 10
 max_iteration = 10
 patience = 2
 targeted = True
+data_path = 'data/dev_data/'
