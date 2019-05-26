@@ -11,3 +11,5 @@ steps = 100
 use_post_process = True
 
 num_classes = 110
+output_dir = 'outputs/'
+output_size = (299, 299)

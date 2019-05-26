@@ -58,3 +58,11 @@ if __name__ == '__main__':
     result = torch.cat(result).numpy()
     result = np.transpose(result, (0, 2, 3, 1))
     result = [Image.fromarray(i) for i in (result * 255).astype(np.uint8)]
+    if output_dir is not None:
+        if not os.path.exists(output_dir):
+            os.mkdir(output_dir)
+        for img, path in zip(result, data['image_path']):
+            name = path.split('/')[-1]
+            path = os.path.join(output_dir, name)
+            img = img.resize(output_size)
+            img.save(path)
