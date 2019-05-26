@@ -176,6 +176,7 @@ class Attack(object):
             acc = [(c.argmax(dim=1) == label_tensor).type(torch.float32).mean() for c in noise_cls]
         l2_distance = converter.float32_to_uint8(noise_img) - converter.float32_to_uint8(original_img)
         l2_distance = torch.sqrt((l2_distance ** 2).sum(dim=1)).mean()
+        print(acc, l2_distance)
         return sum(acc) / len(acc) * self.weight + l2_distance#, acc, l2_distance
     
     def predict(self, img, label, targeted=False, lr=10, max_perturbation=0):
@@ -190,14 +191,14 @@ class Attack(object):
         else:
             raise Exception('Device {} Not Found!'.format(device))
         self.opt = torch.optim.SGD(self.model_single.parameters(), lr=lr, momentum=0.9)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.opt, [lambda epoch: (2) ** epoch])
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.opt, [lambda epoch: (1/2) ** epoch])
         used_patience = 0
         best_score = 255
         best_result = None
         for epoch in range(self.max_epoch):
             result = self.update_one_step(original_x, label_tensor, targeted, lr, max_perturbation=max_perturbation)
             score = self.get_score(result, img, label, targeted)
-            print(score)
+#             print(score)
             if score < best_score:
                 best_score = score
                 best_result = result

@@ -34,8 +34,8 @@ if __name__ == '__main__':
                 data['target'].append(int(row['trueLabel']))
     result = []
     epoch = math.ceil(len(data['imgs']) / batch_size)
-    
-    solver = Attack(classifiers[: 2], classifiers[: 2], 
+
+    solver = Attack(classifiers[: -1], classifiers[-1: ], 
                     device='cuda', patience=patience, max_iteration=max_iteration)
     for i in tqdm.tqdm(range(epoch), total=epoch):
         torch.cuda.empty_cache()
