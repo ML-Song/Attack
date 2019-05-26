@@ -6,27 +6,37 @@ import torchvision as tv
 from tensorboardX import SummaryWriter
 
 import pretrainedmodels
+from utils import augmentation
 from config_classifier import *
 from models.classifier import ClassifierNet, Classifier
 from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Classifier model: {} optimizer: {}'.format(model_name, optimizer)
-    comment = 'Classifier model: {} optimizer: {}'.format(model_name, optimizer)
+    checkpoint_name = 'Classifier model: {} with_augmentation: {}'.format(model_name, with_augmentation)
+    comment = 'Classifier model: {} with_augmentation: {}'.format(model_name, with_augmentation)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
     stddev_arr = [0.5, 0.5, 0.5]
     normalize = tv.transforms.Normalize(mean=mean_arr,
                                      std=stddev_arr)
-    
-    train_transform = tv.transforms.Compose([
-        tv.transforms.Resize(image_size),
-        tv.transforms.RandomCrop(crop_size),
-        tv.transforms.ToTensor(),
-        normalize, 
-    ])
+    if with_augmentation:
+        train_transform = tv.transforms.Compose([
+            tv.transforms.Resize(image_size),
+            tv.transforms.RandomCrop(crop_size),
+            tv.transforms.ToTensor(),
+            normalize, 
+            augmentation.RandomBlur(), 
+            augmentation.RandomNoise(), 
+        ])
+    else:
+        train_transform = tv.transforms.Compose([
+            tv.transforms.Resize(image_size),
+            tv.transforms.RandomCrop(crop_size),
+            tv.transforms.ToTensor(),
+            normalize, 
+        ])
 
     test_transform = tv.transforms.Compose([
         tv.transforms.Resize(image_size),

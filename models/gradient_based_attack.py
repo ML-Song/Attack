@@ -12,7 +12,7 @@ import torchvision.utils as vutils
 from torch.nn import functional as F
 
 from utils import converter
-from utils.tools import gaussian_kernel_2d_opencv
+from utils.augmentation import gaussian_kernel_2d_opencv
 
 
 class AttackNet(nn.Module):

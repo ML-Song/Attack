@@ -12,3 +12,4 @@ max_epoch = 30
 checkpoint_path = None#'saved_models/best_model_Classifier model: inceptionv4 optimizer: sgd.pt'
 model_name = 'inceptionv4'
 optimizer = 'sgd'
+with_augmentation = True

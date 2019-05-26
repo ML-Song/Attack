@@ -17,7 +17,7 @@ from models.classifier import ClassifierNet, Classifier
 
 if __name__ == '__main__':
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
-    models = [pretrainedmodels.__dict__[name]() for name in classifier_name]
+    models = [pretrainedmodels.__dict__[name](pretrained=None) for name in classifier_name]
     classifiers = [ClassifierNet(model, num_classes) for model in models]
     for c, p in zip(classifiers, classifier_path):
         c.load_state_dict(torch.load(p))

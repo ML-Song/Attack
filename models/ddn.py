@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-from utils.tools import gaussian_kernel_2d_opencv
+from utils.augmentation import gaussian_kernel_2d_opencv
 
 
 class DDN:
@@ -98,7 +98,7 @@ class DDN:
             else:
                 logits = [m((adv - 0.5) * 2) for m in model]
                 
-            pred_labels = sum(logits).argmax(1)
+            pred_labels = sum([F.softmax(l, dim=1) for l in logits]).argmax(1)
             ce_loss = [F.cross_entropy(l, labels, reduction='sum') for l in logits]
             loss = multiplier * sum(ce_loss) / len(ce_loss)
 
