@@ -36,7 +36,7 @@ if __name__ == '__main__':
     epoch = math.ceil(len(data['imgs']) / batch_size)
 
     solver = Attack(classifiers[: -1], classifiers[-1: ], 
-                    device='cuda', patience=patience, max_iteration=max_iteration)
+                    device='cuda', patience=patience, max_iteration=max_iteration, margin=margin)
     for i in tqdm.tqdm(range(epoch), total=epoch):
         torch.cuda.empty_cache()
         batch_x = data['imgs'][i * batch_size: (i + 1) * batch_size]

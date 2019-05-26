@@ -10,8 +10,8 @@ classifier_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd.
 image_size = (224, 224)
 num_classes = 110
 batch_size = 16
-lr = 20 if targeted else 10
+lr = 16
 max_iteration = 10
-patience = 3
-max_perturbation = 10 if targeted else 5
-
+patience = 5
+max_perturbation = 10
+margin = 0.1
