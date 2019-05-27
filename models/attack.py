@@ -12,7 +12,7 @@ from utils import converter
 
 
 class AttackNet(nn.Module):
-    def __init__(self, backbone, out_channels=3, max_perturbation=20., scale=10):
+    def __init__(self, backbone, out_channels=3, max_perturbation=30., scale=10):
         super().__init__()
         self.backbone = backbone
         self.out_channels = out_channels
@@ -54,7 +54,7 @@ class AttackNet(nn.Module):
 class Attack(object):
     def __init__(self, net, classifier=None, train_loader=None, test_loader=None, batch_size=None, gain=None, 
                  optimizer='sgd', lr=1e-3, patience=5, interval=1, weight=64, 
-                 img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', margin=0.3, 
+                 img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', margin=0.5, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], targeted=True, num_classes=110):
         self.train_loader = train_loader
         self.test_loader = test_loader
@@ -143,7 +143,7 @@ class Attack(object):
                     perturbation = perturbation * mask
                 perturbated_img = img_masked + perturbation
                 
-                cls = [i(perturbated_img) for i in self.classifier]
+                cls = [c(perturbated_img) for c in self.classifier]
                 
                 loss_cls, loss_perturbation = self.get_loss(cls, target if self.targeted else label, perturbated_img, img)
                 
@@ -200,7 +200,7 @@ class Attack(object):
     def test(self):
         self.net.eval()
         with torch.no_grad():
-            pred = [[]] * len(self.classifier)
+            preds = []
             gt = []
             perturbations = []
             imgs = []
@@ -238,21 +238,19 @@ class Attack(object):
                 perturbations.append(perturbation.detach().cpu())
                 
                 cls = [c(noise_img) for c in self.classifier]
+                preds.append([c.argmax(dim=1).detach().cpu() for c in cls])
                 
-                for i, c in enumerate(cls):
-                    pred[i].append(c.argmax(dim=1).detach().cpu())
-                
-            pred = [torch.cat(i).numpy() for i in pred]
+            preds = [torch.cat([p[i] for p in preds]).numpy() for i, c in enumerate(self.classifier)]
             gt = torch.cat(gt).numpy()
             perturbations = torch.cat(perturbations).numpy()
             imgs = torch.cat(imgs)
             noise_imgs = torch.cat(noise_imgs)
-            acc = [(gt == p).astype(np.float32).mean() for p in pred]
+            acc = [(gt == p).astype(np.float32).mean() for p in preds]
             
             if self.targeted:
-                perturbation = [perturbations[gt == p].sum() / len(perturbations) if (gt == p).sum() > 0 else 0 for p in pred]
+                perturbation = [perturbations[gt == p].sum() / len(perturbations) if (gt == p).sum() > 0 else 0 for p in preds]
             else:
-                perturbation = [perturbations[gt != p].sum() / len(perturbations) if (gt != p).sum() > 0 else 0 for p in pred]
+                perturbation = [perturbations[gt != p].sum() / len(perturbations) if (gt != p).sum() > 0 else 0 for p in preds]
         return acc, perturbation, imgs, noise_imgs
 
     def save_model(self, checkpoint_dir, comment=None):

@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} weight: {}'.format(targeted, weight, weight)
-    comment = 'Attack targeted: {} weight: {}'.format(targeted, weight, weight)
+    checkpoint_name = 'Attack targeted: {} weight: {} loss_mode: {}'.format(targeted, weight, loss_mode)
+    comment = 'Attack targeted: {} weight: {} loss_mode: {}'.format(targeted, weight, loss_mode)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
