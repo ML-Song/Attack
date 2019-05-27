@@ -1,6 +1,7 @@
 #coding=utf-8
 import os
 import csv
+import tqdm
 import time
 import torch
 import numpy as np
@@ -20,8 +21,8 @@ from models.classifier import ClassifierNet, Classifier
 if __name__ == '__main__':
     start = time.time()
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
-    image_mean = torch.tensor(image_mean).view(1, 3, 1, 1)
-    image_std = torch.tensor(image_std).view(1, 3, 1, 1)
+    image_mean = torch.tensor(image_mean).view(1, 3, 1, 1).cuda()
+    image_std = torch.tensor(image_std).view(1, 3, 1, 1).cuda()
     
     white_models = [pretrainedmodels.__dict__[name](pretrained=None) for name in white_model_name]
     white_models = [ClassifierNet(model, num_classes) for model in white_models]
@@ -32,7 +33,7 @@ if __name__ == '__main__':
         m = NormalizedModel(m, image_mean, image_std)
         
     black_model = pretrainedmodels.__dict__[black_model_name](pretrained=None)
-    black_model = ClassifierNet(black_models, num_classes)
+    black_model = ClassifierNet(black_model, num_classes)
     black_model.load_state_dict(torch.load(black_model_path))
     black_model.eval()
     black_model = black_model.cuda()
@@ -63,7 +64,8 @@ if __name__ == '__main__':
         FGM_L2(1)
     ]
     result = []
-    for img, label in zip(data['imgs'], data['target']):
+    score = 0
+    for img, label in tqdm.tqdm(zip(data['imgs'], data['target']), total=len(data['target'])):
         img = np.asarray(img.resize((224, 224)))
         t_img = torch.from_numpy(img).float().div(255).permute(2, 0, 1).unsqueeze(0)
         adv = attack(black_box_model, surrogate_models, attacks,
@@ -71,15 +73,19 @@ if __name__ == '__main__':
         if adv is None:
             print('Not Found')
             result.append(None)
+            score += 64
             continue
             
         result.append(adv)
-        pred_on_adv = black_box_model(adv)
-        print('True label: {}; Prediction on the adversarial: {}'.format(label,
-                                                                         pred_on_adv))
+#         if len(result) == 10:
+#             break
+#         pred_on_adv = black_box_model(adv)
+#         print('True label: {}; Prediction on the adversarial: {}'.format(label,
+#                                                                          pred_on_adv))
         l2_norm = np.sqrt(((adv - img) ** 2).sum(-1)).mean()
-        print('L2 norm of the attack: {:.4f}'.format(l2_norm))
-        
+        score += l2_norm
+#         print('L2 norm of the attack: {:.4f}'.format(l2_norm))
+    print('score: {}'.format(score / len(data['target'])))
     result = [Image.fromarray(img.astype(np.uint8)) if img is not None else data['imgs'][i] for i, img in enumerate(result)]
     if output_dir is not None:
         if not os.path.exists(output_dir):
@@ -88,5 +94,5 @@ if __name__ == '__main__':
             name = path.split('/')[-1]
             path = os.path.join(output_dir, name)
             img.save(path)
-    print(time.time() - start)
+#     print(time.time() - start)
     
