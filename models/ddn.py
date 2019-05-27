@@ -1,4 +1,5 @@
 from typing import Optional
+from functools import reduce
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -98,11 +99,12 @@ class DDN:
             else:
                 logits = [m((adv - 0.5) * 2) for m in model]
                 
-            pred_labels = sum([F.softmax(l, dim=1) for l in logits]).argmax(1)
+            pred_labels = [l.argmax(dim=1) for l in logits]
             ce_loss = [F.cross_entropy(l, labels, reduction='sum') for l in logits]
             loss = multiplier * sum(ce_loss) / len(ce_loss)
 
-            is_adv = (pred_labels == labels) if targeted else (pred_labels != labels)
+            is_adv = [(p == labels) if targeted else (p != labels) for p in pred_labels]
+            is_adv = reduce(lambda x, y: x & y, is_adv)
             is_smaller = l2 < best_l2
             is_both = is_adv * is_smaller
             adv_found[is_both] = 1

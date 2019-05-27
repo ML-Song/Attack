@@ -12,7 +12,7 @@ from utils import converter
 
 
 class AttackNet(nn.Module):
-    def __init__(self, backbone, out_channels=3, max_perturbation=30., scale=10):
+    def __init__(self, backbone, out_channels=3, max_perturbation=32., scale=10):
         super().__init__()
         self.backbone = backbone
         self.out_channels = out_channels
@@ -44,10 +44,11 @@ class AttackNet(nn.Module):
 #         mask = torch.sigmoid(self.scale * (mask - 0.5))
         
         perturbation = perturbation.gather(1, target_index).squeeze(dim=1)
-        perturbation_min = perturbation.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
-        perturbation_max = perturbation.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
-        perturbation = ((perturbation - perturbation_min) / (perturbation_max - perturbation_min) - 0.5) * 2
-        perturbation = perturbation * (self.max_perturbation / 128)
+        perturbation = perturbation / ((128 / self.max_perturbation) * torch.sqrt((perturbation ** 2).sum(dim=1, keepdim=True)))
+#         perturbation_min = perturbation.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
+#         perturbation_max = perturbation.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
+#         perturbation = ((perturbation - perturbation_min) / (perturbation_max - perturbation_min) - 0.5) * 2
+#         perturbation = perturbation * (self.max_perturbation / 128)
         return mask, perturbation
         
         
@@ -117,7 +118,7 @@ class Attack(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None, epoch_size=10):
+    def train(self, max_epoch, mode='mask', writer=None, epoch_size=10):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 255
@@ -127,7 +128,7 @@ class Attack(object):
             for batch_idx, data in enumerate(self.train_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
-                if self.targeted:
+                if self.targeted and mode == 'perturbation':
                     if len(data) == 2:
                         target = torch.randint_like(label, 0, self.num_classes).cuda()
                     else:
@@ -138,14 +139,22 @@ class Attack(object):
                 self.reset_grad()
                 mask, perturbation = self.net(img, label, target)
                 img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-                img_masked = img# * mask + img_mean * (1 - mask)
                 if self.targeted:
-                    perturbation = perturbation * mask
-                perturbated_img = img_masked + perturbation
+                    if mode == 'mask':
+                        img_masked = img * mask + img_mean * (1 - mask)
+                        perturbated_img = img_masked
+                    else:
+                        img_masked = img * mask + img_mean * (1 - mask)
+                        perturbated_img = img_masked + perturbation
+                else:
+                    perturbated_img = img + perturbation
+#                 if self.targeted:
+#                     perturbation = perturbation * mask
                 
                 cls = [c(perturbated_img) for c in self.classifier]
                 
-                loss_cls, loss_perturbation = self.get_loss(cls, target if self.targeted else label, perturbated_img, img)
+                loss_cls, loss_perturbation = self.get_loss(cls, target if self.targeted else label, 
+                                                            perturbated_img, img, self.targeted and mode == 'perturbation')
                 
                 loss = loss_cls + loss_perturbation
                 
@@ -167,7 +176,7 @@ class Attack(object):
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
-                acc, perturbation, imgs, perturbated_imgs = self.test()
+                acc, perturbation, imgs, perturbated_imgs = self.test(self.targeted, mode)
                 if writer:
                     for i, (a, p) in enumerate(zip(acc, perturbation)):
                         writer.add_scalar(
@@ -177,7 +186,7 @@ class Attack(object):
                         
                     acc_mean = sum(acc) / len(acc)
                     perturbation_mean = sum(perturbation) / len(perturbation)
-                    if self.targeted:
+                    if self.targeted and mode == 'perturbation':
                         score = (1 - acc_mean) * 64 + perturbation_mean
                     else:
                         score = acc_mean * 64 + perturbation_mean
@@ -197,7 +206,7 @@ class Attack(object):
                     best_score = score
                     self.save_model(self.checkpoint_dir)
 
-    def test(self):
+    def test(self, targeted=False, mode='mask'):
         self.net.eval()
         with torch.no_grad():
             preds = []
@@ -208,7 +217,7 @@ class Attack(object):
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
-                if self.targeted:
+                if targeted and mode == 'perturbation':
                     if len(data) == 2:
                         target = torch.randint_like(label, 0, self.num_classes).cuda()
                     else:
@@ -220,8 +229,15 @@ class Attack(object):
                     
                 mask, noise = self.net(img, label, target)
                 img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-                img_masked = img# * mask + img_mean * (1 - mask)
-                noise_img = img_masked + noise
+                if targeted:
+                    if mode == 'mask':
+                        img_masked = img * mask + img_mean * (1 - mask)
+                        noise_img = img_masked
+                    else:
+                        img_masked = img * mask + img_mean * (1 - mask)
+                        noise_img = img_masked + noise
+                else:
+                    noise_img = img + noise
 
                 noise_img_uint8 = converter.float32_to_uint8(noise_img)
                 noise_img = converter.uint8_to_float32(noise_img_uint8)
@@ -247,7 +263,7 @@ class Attack(object):
             noise_imgs = torch.cat(noise_imgs)
             acc = [(gt == p).astype(np.float32).mean() for p in preds]
             
-            if self.targeted:
+            if targeted and mode == 'perturbation':
                 perturbation = [perturbations[gt == p].sum() / len(perturbations) if (gt == p).sum() > 0 else 0 for p in preds]
             else:
                 perturbation = [perturbations[gt != p].sum() / len(perturbations) if (gt != p).sum() > 0 else 0 for p in preds]
@@ -279,7 +295,7 @@ class Attack(object):
             noise_img_uint8 = np.transpose(noise_img_uint8, (0, 2, 3, 1))
         return noise_img_uint8
     
-    def get_loss(self, preds, target, noise_img, img, max_perturbation=10):
+    def get_loss(self, preds, target, noise_img, img, targeted, max_perturbation=10):
         target_one_hot = torch.zeros_like(preds[0])
         target_one_hot.scatter_(1, target.view(-1, 1), 1)
         cls_losses = []
@@ -303,7 +319,7 @@ class Attack(object):
                 prob_other_max = prob.clone()
                 prob_other_max[target_one_hot.type(torch.uint8)] = -1
                 prob_other_max = prob_other_max.max(dim=1)[0]
-            if self.targeted:
+            if targeted:
                 if self.loss_mode == 'margin':
                     prob_delta = prob_other_max - prob_gt + self.margin
                     loss_cls = torch.clamp(prob_delta, min=0,).sum() / target.size(0)

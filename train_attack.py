@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} weight: {} loss_mode: {}'.format(targeted, weight, loss_mode)
-    comment = 'Attack targeted: {} weight: {} loss_mode: {}'.format(targeted, weight, loss_mode)
+    checkpoint_name = 'Attack targeted: {} weight: {} loss_mode: {} max_l2: {}'.format(targeted, weight, loss_mode, 64)
+    comment = 'Attack targeted: {} weight: {} loss_mode: {} max_l2: {}'.format(targeted, weight, loss_mode, 64)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -68,4 +68,8 @@ if __name__ == '__main__':
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        if targeted:
+            solver.train(max_epoch, 'mask', writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+            solver.train(max_epoch, 'perturbation', writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        else:
+            solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
