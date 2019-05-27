@@ -66,13 +66,13 @@ if __name__ == '__main__':
     result = []
     score = 0
     for img, label in tqdm.tqdm(zip(data['imgs'], data['target']), total=len(data['target'])):
-        img = np.asarray(img.resize((224, 224)))
-        t_img = torch.from_numpy(img).float().div(255).permute(2, 0, 1).unsqueeze(0)
+        img_np = np.asarray(img.resize((224, 224)))
+        t_img = torch.from_numpy(img_np).float().div(255).permute(2, 0, 1).unsqueeze(0)
         adv = attack(black_box_model, surrogate_models, attacks,
-                     img, label, targeted=targeted, device=device)
+                     img_np, label, targeted=targeted, device=device)
         if adv is None:
             print('Not Found')
-            result.append(None)
+            result.append(np.asarray(img))
             score += 64
             continue
             
@@ -82,11 +82,11 @@ if __name__ == '__main__':
 #         pred_on_adv = black_box_model(adv)
 #         print('True label: {}; Prediction on the adversarial: {}'.format(label,
 #                                                                          pred_on_adv))
-        l2_norm = np.sqrt(((adv - img) ** 2).sum(-1)).mean()
+        l2_norm = np.sqrt(((adv - img_np) ** 2).sum(-1)).mean()
         score += l2_norm
 #         print('L2 norm of the attack: {:.4f}'.format(l2_norm))
     print('score: {}'.format(score / len(data['target'])))
-    result = [Image.fromarray(img.astype(np.uint8)) if img is not None else data['imgs'][i] for i, img in enumerate(result)]
+    result = [Image.fromarray(img.astype(np.uint8)) for i, img in enumerate(result)]
     if output_dir is not None:
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)

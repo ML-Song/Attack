@@ -1,15 +1,15 @@
 #coding=utf-8
-import cv2
 import torch
 import numpy as np
 import torchvision as tv
 from torch.nn import functional as F
 
 
-def gaussian_kernel_2d_opencv(kernel_size=3, sigma=0):
-    kx = cv2.getGaussianKernel(kernel_size, sigma)
-    ky = cv2.getGaussianKernel(kernel_size, sigma)
-    g = np.multiply(kx, np.transpose(ky))
+def gaussian_kernel_2d_opencv(kernel_size=3, sigma=1):
+    kx =  np.arange(kernel_size) - kernel_size // 2
+    kx = np.exp(-(kx ** 2) / (2 * sigma ** 2)).reshape(-1, 1)
+    g = np.dot(kx, kx.T)
+    g /= g.sum()
     kernel = np.array([np.array([g, np.zeros_like(g), np.zeros_like(g)]), 
               np.array([np.zeros_like(g), g, np.zeros_like(g)]), 
               np.array([np.zeros_like(g), np.zeros_like(g), g])])

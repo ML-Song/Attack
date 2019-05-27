@@ -90,6 +90,7 @@ class DDN:
             scheduler.step()
 
             l2 = delta.data.view(batch_size, -1).norm(p=2, dim=1)
+#             l2 = torch.clamp(torch.sqrt(torch.clamp((delta ** 2).sum(dim=1), min=1e-6)), min=10).mean(dim=-1).mean(dim=-1)
             adv = inputs + delta
             if use_post_process:
                 kernel_size = 5
