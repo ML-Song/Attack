@@ -95,16 +95,19 @@ class DDN:
                 kernel_size = 5
                 kernel = torch.tensor(gaussian_kernel_2d_opencv(kernel_size)).cuda()
                 adv_processed = F.conv2d(adv, kernel, padding=kernel_size//2)
-                logits = [m((adv_processed - 0.5) * 2) for m in model]
+                logits = [m(adv_processed) for m in model] if isinstance(model, list) else model(adv_processed)
             else:
-                logits = [m((adv - 0.5) * 2) for m in model]
+                logits = [m(adv) for m in model] if isinstance(model, list) else model(adv)
                 
-            pred_labels = [l.argmax(dim=1) for l in logits]
-            ce_loss = [F.cross_entropy(l, labels, reduction='sum') for l in logits]
-            loss = multiplier * sum(ce_loss) / len(ce_loss)
+            pred_labels = [l.argmax(dim=1) for l in logits] if isinstance(logits, list) else logits.argmax(dim=1)
+            ce_loss = sum([F.cross_entropy(l, labels, reduction='sum') for l in logits]) / len(ce_loss) if isinstance(logits, list) else F.cross_entropy(logits, labels, reduction='sum')
+            loss = multiplier * ce_loss
 
-            is_adv = [(p == labels) if targeted else (p != labels) for p in pred_labels]
-            is_adv = reduce(lambda x, y: x & y, is_adv)
+            if isinstance(pred_labels, list):
+                is_adv = [(p == labels) if targeted else (p != labels) for p in pred_labels]
+                is_adv = reduce(lambda x, y: x & y, is_adv)
+            else:
+                is_adv = (pred_labels == labels) if targeted else (pred_labels != labels)
             is_smaller = l2 < best_l2
             is_both = is_adv * is_smaller
             adv_found[is_both] = 1
