@@ -1,6 +1,7 @@
 #coding=utf-8
 import os
 import csv
+import math
 import tqdm
 import time
 import torch
@@ -65,26 +66,44 @@ if __name__ == '__main__':
     ]
     result = []
     score = 0
-    for img, label in tqdm.tqdm(zip(data['imgs'], data['target']), total=len(data['target'])):
-        img_np = np.asarray(img.resize((224, 224)))
-        t_img = torch.from_numpy(img_np).float().div(255).permute(2, 0, 1).unsqueeze(0)
+    images = np.array([np.asarray(i.resize((224, 224))) for i in data['imgs']])
+    max_epoch = math.ceil(len(images) / batch_size)
+    correct_num = 0
+    for epoch in tqdm.tqdm(range(max_epoch)):
+        img_np = images[batch_size * epoch: batch_size * (epoch + 1)]
+        label = data['target'][batch_size * epoch: batch_size * (epoch + 1)]
         adv = attack(black_box_model, surrogate_models, attacks,
                      img_np, label, targeted=targeted, device=device)
-        if adv is None:
-            print('Not Found')
-            result.append(np.asarray(img))
-            score += 64
-            continue
-            
+        pred_label = np.array([black_box_model(i) for i in adv])
+        correct_num += (pred_label == np.array(label)).sum()
+#         print(adv.shape)
         result.append(adv)
-#         if len(result) == 10:
-#             break
-#         pred_on_adv = black_box_model(adv)
-#         print('True label: {}; Prediction on the adversarial: {}'.format(label,
-#                                                                          pred_on_adv))
-        l2_norm = np.sqrt(((adv - img_np) ** 2).sum(-1)).mean()
-        score += l2_norm
-#         print('L2 norm of the attack: {:.4f}'.format(l2_norm))
+    result = np.concatenate(result)
+    print(correct_num)
+    print(np.sqrt(((result - images) ** 2).sum(-1)).mean())
+        
+#     for img, label in tqdm.tqdm(zip(data['imgs'], data['target']), total=len(data['target'])):
+#         img_np = np.expand_dims(np.asarray(img.resize((224, 224))), 0)
+# #         t_img = torch.from_numpy(img_np).float().div(255).permute(2, 0, 1).unsqueeze(0)
+# #         t_img = t_img.unsqueeze(dim=0)
+#         label = [label]
+#         adv = attack(black_box_model, surrogate_models, attacks,
+#                      img_np, label, targeted=targeted, device=device)
+#         if adv is None:
+#             print('Not Found')
+#             result.append(np.asarray(img))
+#             score += 64
+#             continue
+            
+#         result.append(adv)
+# #         if len(result) == 10:
+# #             break
+# #         pred_on_adv = black_box_model(adv)
+# #         print('True label: {}; Prediction on the adversarial: {}'.format(label,
+# #                                                                          pred_on_adv))
+#         l2_norm = np.sqrt(((adv - img_np) ** 2).sum(-1)).mean()
+#         score += l2_norm
+# #         print('L2 norm of the attack: {:.4f}'.format(l2_norm))
     print('score: {}'.format(score / len(data['target'])))
     result = [Image.fromarray(img.astype(np.uint8)) for i, img in enumerate(result)]
     if output_dir is not None:
@@ -94,5 +113,5 @@ if __name__ == '__main__':
             name = path.split('/')[-1]
             path = os.path.join(output_dir, name)
             img.save(path)
-#     print(time.time() - start)
+    print(time.time() - start)
     
