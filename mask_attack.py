@@ -1,5 +1,6 @@
 #coding=utf-8
 import os
+import sys
 import csv
 import time
 import torch
@@ -44,7 +45,7 @@ def targeted_mask_attack(solver, original_image, target_image,
     image: PIL
     label: int
     '''
-    result = original_image
+    result = None
 
     _, target_mask = solver.predict(
         [target_image], [target_label], out_size=(299, 299))
@@ -62,6 +63,8 @@ def targeted_mask_attack(solver, original_image, target_image,
             result = original_image
             break
         else:
+            img_np1 = np.asarray(original_image)
+            img_np2 = np.asarray(target_image)
             if step == 0:
                 _, original_mask = solver.predict(
                     [original_image], [original_label], out_size=(299, 299))
@@ -72,50 +75,22 @@ def targeted_mask_attack(solver, original_image, target_image,
             original_mask[original_mask < 0.5] = 0
             original_mask = original_mask[0]
 
-            img_np1 = np.asarray(original_image)
-            img_np2 = np.asarray(target_image)
-            img_mean = (img_np1 * original_mask).sum(axis=0,
-                                                     keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
-            img_masked = img_np1 * (1 - original_mask) + \
-                img_mean * original_mask
-            img_masked = img_masked * (1 - target_mask) + img_np2 * target_mask
+            if step == 0:
+                img_mean = (img_np1 * original_mask).sum(axis=0, 
+                                                         keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
+                img_masked = img_np1 * (1 - original_mask) + \
+                    img_mean * original_mask
+                img_masked = img_masked * (1 - target_mask) + img_np2 * target_mask
+            else:
+                img_masked = img_np1 * (1 - original_mask) + img_np2 * original_mask
             img_masked = np.round(img_masked)
             original_image = Image.fromarray((img_masked).astype(np.uint8))
     return result
 
-# def targeted_mask_attack(solver, original_image, target_image, original_label, target_label, test_model=None):
-#     '''
-#     image: PIL
-#     label: int
-#     '''
-#     _, target_mask = solver.predict([target_image], [target_label], out_size=(299, 299))
-#     target_mask[target_mask >= 0.5] = 1
-#     target_mask[target_mask < 0.5] = 0
-#     target_mask = target_mask[0]
-    
-#     _, original_mask = solver.predict([original_image], [original_label], out_size=(299, 299))
-#     original_mask[original_mask >= 0.5] = 1
-#     original_mask[original_mask < 0.5] = 0
-#     original_mask = original_mask[0]
-    
-#     img_np1 = np.asarray(original_image)
-#     img_np2 = np.asarray(target_image)
-#     img_mean = (img_np1 * original_mask).sum(axis=0, keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
-#     img_masked = img_np1 * (1 - original_mask) + img_mean * original_mask
-#     img_masked = img_masked * (1 - target_mask) + img_np2 * target_mask
-#     img_masked = np.round(img_masked)
-#     img_masked = Image.fromarray((img_masked).astype(np.uint8))
-#     return img_masked
-# #     cls, _ = solver(img_masked)
-# #     if cls.argmax() != target_label:
-# #         img_masked = targeted_mask_attack(solver, img_masked, target_image, original_label, target_label)
-# #     else:
-# #         print(cls.argmax(), target_label)
-# #         return img_masked
-
-
 
 if __name__ == '__main__':
+    inputs_path = sys.argv[1]
+    outputs_path = sys.argv[2]
     start = time.time()
     data = {'image_path': [], 'target': [], 'label': []}
     with open(os.path.join(inputs_path, 'dev.csv'), 'r') as f:
@@ -135,12 +110,19 @@ if __name__ == '__main__':
     solver = GAINSolver(backbone, num_classes, in_channels=in_channels)
     solver.load_model(checkpoint_path)
     
-    black_model = pretrainedmodels.__dict__[black_model_name](pretrained=None)
-    black_model = ClassifierNet(black_model, num_classes)
-    black_model.load_state_dict(torch.load(black_model_path))
-    black_model.eval()
-    black_model = black_model.cuda()
-    black_model = Classifier(black_model)
+    black_box_model = pretrainedmodels.__dict__[black_box_model_name](pretrained=None)
+    black_box_model = ClassifierNet(black_box_model, num_classes)
+    black_box_model.load_state_dict(torch.load(black_box_model_path))
+    black_box_model.eval()
+    black_box_model = black_box_model.cuda()
+    black_box_model = Classifier(black_box_model)
+    
+    black_box_model_test = pretrainedmodels.__dict__[black_box_model_name_test](pretrained=None)
+    black_box_model_test = ClassifierNet(black_box_model_test, num_classes)
+    black_box_model_test.load_state_dict(torch.load(black_box_model_path_test))
+    black_box_model_test.eval()
+    black_box_model_test = black_box_model_test.cuda()
+    black_box_model_test = Classifier(black_box_model_test)
     
     images = np.array([np.asarray(Image.open(i).resize(image_size)) for i in data['image_path']])
     labels = np.array(data['label'])
@@ -150,11 +132,20 @@ if __name__ == '__main__':
         original_image = img
         target_image = images[labels == target]
         if targeted:
-            result.append(targeted_mask_attack(solver, 
-                                               Image.fromarray(original_image), 
-                                               Image.fromarray(target_image[0]), label, target, black_model))
+            tmp = Image.fromarray(original_image)
+            best_norm = 255
+            for t_m in target_image:
+                adv = targeted_mask_attack(solver, 
+                                           Image.fromarray(original_image), 
+                                           Image.fromarray(t_m), label, target, black_box_model, max_iter)
+                if adv is not None:
+                    delta = np.asarray(adv) - original_image
+                    norm = np.sqrt((delta ** 2).sum(-1)).mean()
+                    if norm < best_norm:
+                        tmp = adv
+            result.append(tmp)
         else:
-            result.append(non_targeted_mask_attack(solver, Image.fromarray(original_image), label, black_model))
+            result.append(non_targeted_mask_attack(solver, Image.fromarray(original_image), label, black_box_model))
             
     if outputs_path is not None:
         if not os.path.exists(outputs_path):
@@ -164,11 +155,13 @@ if __name__ == '__main__':
             path = os.path.join(outputs_path, name)
             img.save(path)
     if with_test:
-        cls = black_model.predict(result)
+        cls = black_box_model_test.predict(result)
         cls = cls.argmax(axis=1)
         is_success = (targets == cls if targeted else targets != cls)
         result_np = np.array([np.asarray(i.resize(image_size)) for i in result])
-        perturbation = np.sqrt(((result_np - images) ** 2).sum(-1)).mean(-1).mean(-1)
+        delta = (result_np - images).reshape(len(result_np), -1, 3)
+        perturbation = np.sqrt((delta ** 2).sum(-1)).mean(-1)
+#         perturbation = np.sqrt(((result_np - images) ** 2).sum(-1)).mean(-1).mean(-1)
         perturbation[~is_success] = 0
         score = (1 - is_success.mean()) * 64 + perturbation.mean()
         print('success: {} perturbation: {} score: {}'.format(is_success.mean(), perturbation.mean(), score))
