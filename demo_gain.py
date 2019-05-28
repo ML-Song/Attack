@@ -15,11 +15,13 @@ from models.gain import GAIN, GAINSolver
 from models.classifier import Classifier, ClassifierNet
 
     
-def non_targeted_mask_attack(solver, original_image, original_label, test_model=None):
+def non_targeted_mask_attack(solver, original_image, original_label, test_model=None, max_iter=10):
     '''
     image: PIL
     label: int
     '''
+    if max_iter == 0:
+        return original_image
     _, original_mask = solver.predict([original_image], [original_label], out_size=(299, 299))
     original_mask[original_mask >= 0.5] = 1
     original_mask[original_mask < 0.5] = 0
@@ -35,7 +37,7 @@ def non_targeted_mask_attack(solver, original_image, original_label, test_model=
     else:
         cls = test_model.predict([img_masked])
     if cls.argmax() == original_label:
-        img_masked = non_targeted_mask_attack(solver, img_masked, original_label)
+        img_masked = non_targeted_mask_attack(solver, img_masked, original_label, test_model, max_iter-1)
     return img_masked
 
     
@@ -145,7 +147,8 @@ if __name__ == '__main__':
                         tmp = adv
             result.append(tmp)
         else:
-            result.append(non_targeted_mask_attack(solver, Image.fromarray(original_image), label, black_box_model))
+            result.append(non_targeted_mask_attack(solver, Image.fromarray(original_image), 
+                                                   label, black_box_model, max_iter))
             
     if outputs_path is not None:
         if not os.path.exists(outputs_path):

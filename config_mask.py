@@ -3,7 +3,7 @@
 # inputs_path = 'data/dev_data/'
 # outputs_path = 'outputs/'
 
-targeted = True
+targeted = False
 model_name = 'se_resnext50_32x4d'
 checkpoint_path = 'saved_models/best_model_GAIN model: se_resnext50_32x4d optimizer: sgd loc: None temp: 0.1.pt'
 image_size = (299, 299)
