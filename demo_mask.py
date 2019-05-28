@@ -168,6 +168,6 @@ if __name__ == '__main__':
 #         perturbation = np.sqrt(((result_np - images) ** 2).sum(-1)).mean(-1).mean(-1)
         perturbation[~is_success] = 0
         score = (1 - is_success.mean()) * 64 + perturbation.mean()
-        print('success: {} perturbation: {} score: {}'.format(is_success.mean(), perturbation.mean(), score))
+        print('success: {} perturbation: {} score: {}'.format(is_success.mean(), perturbation.sum() / is_success.sum(), score))
         
     print(time.time() - start)
