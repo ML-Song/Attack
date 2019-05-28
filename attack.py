@@ -6,8 +6,8 @@ from typing import Callable, Iterable, Optional
 def attack(model: Callable,
            s_models: Iterable[torch.nn.Module],
            attacks,
-           images,
-           labels,
+           image: np.ndarray,
+           label: int,
            targeted: bool,
            device: Optional[torch.device]):
     """ Run a black-box attack on 'model', using surrogate models 's_models'
@@ -42,61 +42,59 @@ def attack(model: Callable,
         The best adversarial image found against 'model'. None if no
         adversarial is found.
     """
-    adversarial = images.copy()
-    get_norms = lambda deltas: np.sqrt((deltas ** 2).sum(axis=-1)).mean(axis=-1).mean(axis=-1)
-    get_norm = lambda delta: np.sqrt((delta ** 2).sum(axis=-1)).mean()
-    best_norms = get_norms(np.maximum(255 - images, images))
-#     best_norm = np.linalg.norm(np.maximum(255 - image, image))
-#     for i, (img, l) in enumerate(zip(image, label)):
-#         original_label = model(img)
-    
-#         if not targeted and original_label != label:
-#             # Image is already adversarial
-#             adversarial[i] = img
-#         if targeted and original_label == label:
-#             # Image is already adversarial
-#             adversarial[i] = img
+    adversarial = image.copy()
+    batch_size = image.shape[0]
+    best_norm = np.linalg.norm(np.maximum(255 - image, image).reshape(batch_size, -1), axis=1)
+#     best_norm = best_norm[0]
+    #np.linalg.norm(np.maximum(255 - image, image))
+
+#     original_label = model(image)
+#     if not targeted and original_label != label:
+#         # Image is already adversarial
+#         return image
+#     if targeted and original_label == label:
+#         # Image is already adversarial
+#         return image
 
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-#     print(images.shape)
-    t_images = torch.tensor(images).float().div(255).permute(0, 3, 1, 2)
-    t_images = t_images.to(device)
-    t_labels = torch.tensor(labels, device=device)#.unsqueeze(0)
-#     print(t_images.shape, t_labels.shape)
 
-#     for s_m in s_models:
-    for attack in attacks:
-        adv_img = attack.attack(s_models, t_images, t_labels, targeted)#.squeeze(0)
-        deltas = adv_img.permute(0, 2, 3, 1).cpu().numpy() * 255 - images
-        deltas = np.round(deltas)
-        norms = get_norms(deltas)
-        for i, (image, label, delta, norm, best_norm) in enumerate(zip(images, labels, deltas, norms, best_norms)):
-            if norm > 0:
-                # Run bound search
-                lower, upper, found = bound_search(model, image,
-                                                   label, delta,
+    t_image = torch.tensor(image).float().div(255).permute(0, 3, 1, 2)
+    t_image = t_image.to(device)
+    t_label = torch.tensor(label, device=device)#.unsqueeze(0)
+#     image = image[0]
+#     label = label[0]
+    for s_m in s_models:
+        for attack in attacks:
+            adv_img = attack.attack(s_m, t_image, t_label, targeted)#.squeeze(0)
+            delta = adv_img.permute(0, 2, 3, 1).cpu().numpy() * 255 - image
+            deltas = np.round(delta)
+            norms = np.linalg.norm(delta.reshape(batch_size, -1), axis=1)
+            for i, (delta, norm) in enumerate(zip(deltas, norms)):
+                if norm > 0:
+                    # Run bound search
+                    lower, upper, found = bound_search(model, image[i],
+                                                       label[i], delta,
+                                                       targeted=targeted)
+                    if found:
+                        norm = np.linalg.norm(upper)
+                        if norm < best_norm[i]:
+                            adversarial[i] = upper + image[i]
+                            best_norm[i] = norm
+
+                    # Run binary search
+                    upper_, found_ = binary_search(model, image[i], label[i],
+                                                   lower[i], upper[i], steps=10,
                                                    targeted=targeted)
-                if found:
-                    norm = get_norm(upper)
-                    if norm < best_norm:
-                        adversarial[i] = upper + image
-                        best_norms[i] = norm
 
-                # Run binary search
-                upper_, found_ = binary_search(model, image, label,
-                                               lower, upper, steps=10,
-                                               targeted=targeted)
-
-                if found_:
-                    norm = get_norm(upper_)
-                    if norm < best_norm:
-                        adversarial[i] = upper_ + image
-                        best_norms[i] = norm
-                print(found or found_)
+                    if found_:
+                        norm = np.linalg.norm(upper_)
+                        if norm < best_norm[i]:
+                            adversarial[i] = upper_ + image[i]
+                            best_norm[i] = norm
 
 
-    return adversarial
+    return adversarial#[0]
 
 
 def bound_search(model, image, label, delta, alpha=1, iters=9, targeted=False):
