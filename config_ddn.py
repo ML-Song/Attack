@@ -9,7 +9,7 @@ white_model_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd
 black_model_name = 'inceptionv4'
 black_model_path = 'saved_models/best_model_Classifier model: {} optimizer: sgd.pt'.format(black_model_name)
 
-batch_size = 1
+batch_size = 16
 steps = 100
 use_post_process = True
 

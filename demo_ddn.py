@@ -79,8 +79,8 @@ if __name__ == '__main__':
 #         print(adv.shape)
         result.append(adv)
     result = np.concatenate(result)
-    print(correct_num)
-    print(np.sqrt(((result - images) ** 2).sum(-1)).mean())
+#     print(correct_num)
+#     print(np.sqrt(((result - images) ** 2).sum(-1)).mean())
         
 #     for img, label in tqdm.tqdm(zip(data['imgs'], data['target']), total=len(data['target'])):
 #         img_np = np.expand_dims(np.asarray(img.resize((224, 224))), 0)

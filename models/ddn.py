@@ -76,7 +76,7 @@ class DDN:
         multiplier = 1 if targeted else -1
         delta = torch.zeros_like(inputs, requires_grad=True)
         norm = torch.full((batch_size,), self.init_norm, device=self.device, dtype=torch.float)
-        worst_norm = torch.max(inputs, 1 - inputs).view(batch_size, -1).norm(p=2, dim=1)
+        worst_norm = F.interpolate(torch.max(inputs, 1 - inputs), (299, 299)).view(batch_size, -1).norm(p=2, dim=1)
 
         # Setup optimizers
         optimizer = optim.SGD([delta], lr=1)
@@ -89,7 +89,7 @@ class DDN:
         for i in range(self.steps):
             scheduler.step()
 
-            l2 = delta.data.view(batch_size, -1).norm(p=2, dim=1)
+            l2 = F.interpolate(delta, (299, 299)).data.view(batch_size, -1).norm(p=2, dim=1)
 #             l2 = torch.clamp(torch.sqrt(torch.clamp((delta ** 2).sum(dim=1), min=1e-6)), min=10).mean(dim=-1).mean(dim=-1)
             adv = inputs + delta
             if use_post_process:
@@ -153,5 +153,5 @@ class DDN:
             best_delta.renorm_(p=2, dim=0, maxnorm=self.max_norm)
             if self.quantize:
                 best_delta.mul_(self.levels - 1).round_().div_(self.levels - 1)
-        print('success: {}'.format(adv_found.float().mean().item()))
+#         print('success: {}'.format(adv_found.float().mean().item()))
         return inputs + best_delta

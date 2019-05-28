@@ -93,6 +93,7 @@ def attack(model: Callable,
                     if norm < best_norm:
                         adversarial[i] = upper_ + image
                         best_norms[i] = norm
+                print(found or found_)
 
 
     return adversarial
