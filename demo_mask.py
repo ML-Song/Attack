@@ -77,7 +77,7 @@ def targeted_mask_attack(solver, original_image, target_image,
             original_mask[original_mask < 0.5] = 0
             original_mask = original_mask[0]
 
-            if step == 0:
+            if step == -1:
                 img_mean = (img_np1 * original_mask).sum(axis=0, 
                                                          keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
                 img_masked = img_np1 * (1 - original_mask) + \
@@ -85,6 +85,7 @@ def targeted_mask_attack(solver, original_image, target_image,
                 img_masked = img_masked * (1 - target_mask) + img_np2 * target_mask
             else:
                 img_masked = img_np1 * (1 - original_mask) + img_np2 * original_mask
+                img_masked = img_masked * (1 - target_mask) + img_np2 * target_mask
             img_masked = np.round(img_masked)
             original_image = Image.fromarray((img_masked).astype(np.uint8))
     return result
