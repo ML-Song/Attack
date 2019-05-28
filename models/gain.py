@@ -105,7 +105,8 @@ class GAINSolver(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None, pretrain_percentage=0.0, mode='PRETRAIN'):
+    def train(self, max_epoch, writer=None, epoch_size=100, pretrain_percentage=0.0, mode='PRETRAIN'):
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         assert(mode in ('PRETRAIN', 'TRAIN'))
         pretrain_epochs = int(max_epoch * pretrain_percentage)
         torch.cuda.manual_seed(1)
@@ -143,7 +144,10 @@ class GAINSolver(object):
                     
                 loss.backward()
                 self.opt.step()
+                scheduler.step(step)
                 if writer:
+                    writer.add_scalar(
+                        'lr', self.opt.param_groups[0]['lr'], global_step=step)
                     writer.add_scalar(
                         'loss', loss.data, global_step=step)
                     writer.add_scalar(
@@ -158,8 +162,8 @@ class GAINSolver(object):
                 torch.cuda.empty_cache()
                 acc, acc_masked, imgs, masks = self.test()
                 if writer:
-                    writer.add_scalar(
-                        'lr', self.opt.param_groups[0]['lr'], global_step=epoch)
+#                     writer.add_scalar(
+#                         'lr', self.opt.param_groups[0]['lr'], global_step=epoch)
                     writer.add_scalar(
                         'acc', acc, global_step=epoch)
                     writer.add_scalar(
@@ -177,7 +181,7 @@ class GAINSolver(object):
                     image_with_mask = vutils.make_grid(image_with_mask, normalize=False, scale_each=True)
                     writer.add_image('Image With Mask', image_with_mask, epoch)
                 
-                self.scheduler.step(score)
+#                 self.scheduler.step(score)
                 if best_score < score:
                     best_score = score
                     self.save_model(self.checkpoint_dir)
