@@ -44,11 +44,11 @@ class AttackNet(nn.Module):
 #         mask = torch.sigmoid(self.scale * (mask - 0.5))
         
         perturbation = perturbation.gather(1, target_index).squeeze(dim=1)
-        perturbation = perturbation / ((128 / self.max_perturbation) * torch.sqrt((perturbation ** 2).sum(dim=1, keepdim=True)))
-#         perturbation_min = perturbation.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
-#         perturbation_max = perturbation.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
-#         perturbation = ((perturbation - perturbation_min) / (perturbation_max - perturbation_min) - 0.5) * 2
-#         perturbation = perturbation * (self.max_perturbation / 128)
+#         perturbation = perturbation / ((128 / self.max_perturbation) * torch.sqrt((perturbation ** 2).sum(dim=1, keepdim=True)))
+        perturbation_min = perturbation.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
+        perturbation_max = perturbation.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
+        perturbation = ((perturbation - perturbation_min) / (perturbation_max - perturbation_min) - 0.5) * 2
+        perturbation = perturbation * (self.max_perturbation / 128)
         return mask, perturbation
         
         
@@ -91,6 +91,7 @@ class Attack(object):
         if isinstance(classifier, list):
             for i in self.classifier_single:
                 i.eval()
+                i.volatile = True
 
         if len(devices) == 0:
             pass
@@ -118,7 +119,7 @@ class Attack(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, mode='perturbation', writer=None, epoch_size=10):
+    def train(self, max_epoch, writer=None, epoch_size=10, mode='perturbation'):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 255
@@ -296,6 +297,16 @@ class Attack(object):
         return noise_img_uint8
     
     def get_loss(self, preds, target, noise_img, img, targeted, max_perturbation=10):
+        loss_perturbation = F.mse_loss(noise_img, img)
+        loss_cls_non_target = 0
+        for out in preds:
+            out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
+            loss_cls_non_target = loss_cls_non_target + F.nll_loss(out_inverse, target)
+#         loss = (loss_cls_non_target + beta * loss_min_noise) / (1 + beta)
+        return loss_cls_non_target, 8 * loss_perturbation
+        
+        
+        
         target_one_hot = torch.zeros_like(preds[0])
         target_one_hot.scatter_(1, target.view(-1, 1), 1)
         cls_losses = []

@@ -64,7 +64,7 @@ if __name__ == '__main__':
         raise Exception('\nModel {} not exist'.format(model_name))
 #     net = GAIN(backbone, num_classes, in_channels=in_channels)
     solver = GAINSolver(backbone, num_classes, in_channels, 
-                        train_loader, vali_loader, test_batch_size, 
+                        train_loader, test_loader, test_batch_size, 
                         lr=lr, loss_weights=loss_weights, checkpoint_name=checkpoint_name, 
                         devices=devices, area_threshold=area_threshold, 
                         optimizer=optimizer, activation=activations.HardConcrete(loc, temp) if loc is not None else None)

@@ -123,24 +123,27 @@ class GAINSolver(object):
 
                 self.reset_grad()
                 cls, gcam = self.net(img, with_gcam=True, target=label)
-                mask = self._soft_mask(gcam)
-                img_masked = img * (1 - mask) + img_mean * mask
-                cls_masked = self.net(img_masked)
+                if self.loss_weights[1] is not None:
+                    mask = self._soft_mask(gcam)
+                    img_masked = img * (1 - mask) + img_mean * mask
+                    cls_masked = self.net(img_masked)
 
-                if len(self.loss_weights) == 2:
-                    loss_cls, loss_am = self.get_loss(cls, cls_masked, label)
-                    if mode == 'PRETRAIN':
-                        loss = loss_cls
-                    elif mode == 'TRAIN':
-                        loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
-                elif len(self.loss_weights) == 3:
-                    loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
-                    if mode == 'PRETRAIN':
-                        loss = loss_cls
-                    elif mode == 'TRAIN':
-                        loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1] + loss_mask * self.loss_weights[2]
+                    if len(self.loss_weights) == 2:
+                        loss_cls, loss_am = self.get_loss(cls, cls_masked, label)
+                        if mode == 'PRETRAIN':
+                            loss = loss_cls
+                        elif mode == 'TRAIN':
+                            loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1]
+                    elif len(self.loss_weights) == 3:
+                        loss_cls, loss_am, loss_mask = self.get_loss(cls, cls_masked, label, mask)
+                        if mode == 'PRETRAIN':
+                            loss = loss_cls
+                        elif mode == 'TRAIN':
+                            loss = loss_cls * self.loss_weights[0] + loss_am * self.loss_weights[1] + loss_mask * self.loss_weights[2]
+                    else:
+                        raise Exception('Loss Weights: {} Error'.format(self.loss_weights))
                 else:
-                    raise Exception('Loss Weights: {} Error'.format(self.loss_weights))
+                    loss = F.cross_entropy(cls, label)
                     
                 loss.backward()
                 self.opt.step()
@@ -150,10 +153,11 @@ class GAINSolver(object):
                         'lr', self.opt.param_groups[0]['lr'], global_step=step)
                     writer.add_scalar(
                         'loss', loss.data, global_step=step)
-                    writer.add_scalar(
-                        'loss_cls', loss_cls.data, global_step=step)
-                    writer.add_scalar(
-                        'loss_mining', loss_am.data, global_step=step)
+                    if self.loss_weights[1] is not None:
+                        writer.add_scalar(
+                            'loss_cls', loss_cls.data, global_step=step)
+                        writer.add_scalar(
+                            'loss_mining', loss_am.data, global_step=step)
                     if len(self.loss_weights) == 3:
                         writer.add_scalar(
                             'loss_mask', loss_mask.data, global_step=step)

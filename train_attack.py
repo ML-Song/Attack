@@ -70,6 +70,6 @@ if __name__ == '__main__':
     with SummaryWriter(comment=comment) as writer:
         if targeted:
 #             solver.train(max_epoch, 'mask', writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
-            solver.train(max_epoch, 'perturbation', writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+            solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
         else:
             solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))

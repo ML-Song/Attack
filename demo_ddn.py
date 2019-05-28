@@ -6,6 +6,7 @@ import tqdm
 import time
 import torch
 import numpy as np
+from torch import nn
 from PIL import Image
 import pretrainedmodels
 import torchvision as tv
@@ -40,11 +41,17 @@ if __name__ == '__main__':
     black_model = black_model.cuda()
     black_model = NormalizedModel(black_model, image_mean, image_std)
         
-    def black_box_model(img):
-        t_img = torch.from_numpy(img).float().div(255).permute(2, 0, 1)
-        t_img = t_img.unsqueeze(0).to(device)
-        with torch.no_grad():
-            return black_model(t_img).argmax().detach().cpu().numpy()
+    def black_box_model(img, batch=False):
+        if not batch:
+            t_img = torch.from_numpy(img).float().div(255).permute(2, 0, 1)
+            t_img = t_img.unsqueeze(0).to(device)
+            with torch.no_grad():
+                return black_model(t_img).argmax().detach().cpu().numpy()
+        else:
+            t_img = torch.from_numpy(img).float().div(255).permute(0, 3, 1, 2)
+            t_img = t_img.to(device)
+            with torch.no_grad():
+                return black_model(t_img).argmax(dim=1).detach().cpu().numpy()
     
     data = {'image_path': [], 'target': [], 'imgs': []}
     with open(os.path.join(data_path, 'dev.csv'), 'r') as f:
@@ -65,8 +72,26 @@ if __name__ == '__main__':
         FGM_L2(1)
     ]
     result = []
-#     score = 0
     images = np.array([np.asarray(i.resize((224, 224))) for i in data['imgs']])
+#     score = 0
+    if targeted:
+        from models import drn, activations
+        from models.gain import GAIN, GAINSolver
+        if model_name in pretrainedmodels.model_names:
+            backbone = pretrainedmodels.__dict__[model_name]()
+            backbone = nn.Sequential(*list(backbone.children())[: -2])
+        elif model_name == 'drn_d_54':
+            backbone = drn.drn_d_54(True, out_feat=True)
+        else:
+            raise Exception('\nModel {} not exist'.format(model_name))
+        solver = GAINSolver(backbone, num_classes, in_channels=in_channels)
+        solver.load_model(gain_model_path)
+        cls, masks = solver.predict(data['imgs'], data['target'], out_size=(224, 224))
+        masks[masks < 0.5] = 0
+        masks[masks >= 0.5] = 1
+    
+        images_mean = images.mean(axis=1, keepdims=True).mean(axis=2, keepdims=True)
+        images = images * (1 - masks) + images_mean * masks
     max_epoch = math.ceil(len(images) / batch_size)
     correct_num = 0
     for epoch in tqdm.tqdm(range(max_epoch)):
@@ -74,8 +99,8 @@ if __name__ == '__main__':
         label = data['target'][batch_size * epoch: batch_size * (epoch + 1)]#[0]
         adv = attack(black_box_model, surrogate_models, attacks,
                      img_np, label, targeted=targeted, device=device)
-        
-        pred_labels = np.array([black_box_model(a) for a in adv])
+        print(adv.shape)
+        pred_labels = black_box_model(adv, True)#np.array([black_box_model(a) for a in adv])
         correct_num += (pred_labels == label).sum()
 #         print(correct_num)
         result.append(adv)
