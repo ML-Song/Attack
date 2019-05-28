@@ -14,5 +14,5 @@ area_threshold = 0.25
 in_channels = 2048#512#
 model_name = 'se_resnext50_32x4d'#'drn_d_54'#
 optimizer = 'sgd'
-loc = -0.3#None#
+loc = None#-0.3#None#
 temp = 0.1

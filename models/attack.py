@@ -118,7 +118,7 @@ class Attack(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, mode='mask', writer=None, epoch_size=10):
+    def train(self, max_epoch, mode='perturbation', writer=None, epoch_size=10):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 255
@@ -144,7 +144,7 @@ class Attack(object):
                         img_masked = img * mask + img_mean * (1 - mask)
                         perturbated_img = img_masked
                     else:
-                        img_masked = img * mask + img_mean * (1 - mask)
+                        img_masked = img# * mask + img_mean * (1 - mask)
                         perturbated_img = img_masked + perturbation
                 else:
                     perturbated_img = img + perturbation

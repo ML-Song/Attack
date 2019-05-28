@@ -101,7 +101,7 @@ class DDN:
                 logits = [m(adv) for m in model] if isinstance(model, list) else model(adv)
                 
             pred_labels = [l.argmax(dim=1) for l in logits] if isinstance(logits, list) else logits.argmax(dim=1)
-            ce_loss = sum([F.cross_entropy(l, labels, reduction='sum') for l in logits]) / len(ce_loss) if isinstance(logits, list) else F.cross_entropy(logits, labels, reduction='sum')
+            ce_loss = sum([F.cross_entropy(l, labels, reduction='sum') for l in logits]) / len(logits) if isinstance(logits, list) else F.cross_entropy(logits, labels, reduction='sum')
             loss = multiplier * ce_loss
 
             if isinstance(pred_labels, list):

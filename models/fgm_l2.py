@@ -26,7 +26,7 @@ class FGM_L2:
 
         self.criterion = F.cross_entropy
 
-    def attack(self, model: nn.Module, inputs: torch.Tensor,
+    def attack(self, model, inputs: torch.Tensor,
                labels: torch.Tensor, targeted: bool = False) -> torch.Tensor:
         """
         Performs the attack of the model for the given inputs.
@@ -43,9 +43,12 @@ class FGM_L2:
         """
         multiplier = -1 if targeted else 1
         delta = torch.zeros_like(inputs, requires_grad=True)
-
-        logits = model(inputs + delta)
-        loss = self.criterion(logits, labels)
+        if isinstance(model, list):
+            logits = [m(inputs + delta) for m in model]
+            loss = sum([self.criterion(l, labels) for l in logits]) / len(logits)
+        else:
+            logits = model(inputs + delta)
+            loss = self.criterion(logits, labels)
         grad = torch.autograd.grad(loss, delta)[0]
 
         adv = inputs + multiplier * self.eps * grad / (grad.view(grad.size(0), -1).norm(2, 1)).view(-1, 1, 1, 1)
