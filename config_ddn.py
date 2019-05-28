@@ -3,10 +3,10 @@
 targeted = False
 data_path = 'data/dev_data/'
 devices = [2]
-white_model_name = ['resnet50']
+white_model_name = ['inceptionv4']
 white_model_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd.pt'.format(i) for i in white_model_name]
 
-black_model_name = 'inceptionv4'
+black_model_name = 'resnet50'
 black_model_path = 'saved_models/best_model_Classifier model: {} optimizer: sgd.pt'.format(black_model_name)
 
 batch_size = 16
