@@ -16,8 +16,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} beta: {} with_gain: {}'.format(targeted, beta, gain_model_name is not None)
-    comment = 'Attack targeted: {} beta: {} with_gain: {}'.format(targeted, beta, gain_model_name is not None)
+    checkpoint_name = 'Attack targeted: {} beta: {} with_gain: {} as_noise: {}'.format(targeted, beta, gain_model_name is not None, as_noise)
+    comment = 'Attack targeted: {} beta: {} with_gain: {} as_noise: {}'.format(targeted, beta, gain_model_name is not None, as_noise)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -73,7 +73,7 @@ if __name__ == '__main__':
         else:
             raise Exception('\nModel {} not exist'.format(model_name))
 
-        gain = GAINSolver(backbone, num_classes, in_channels=in_channels)
+        gain = GAINSolver(backbone, num_classes, in_channels=in_channels, devices=devices)
         gain.load_model(gain_checkpoint_path)
     else:
         gain = None
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, test_classifier, targeted, 
-                    train_loader, test_loader, test_batch_size, gain=gain, beta=beta, optimizer=optimizer, 
+                    train_loader, test_loader, test_batch_size, gain=gain, beta=beta, optimizer=optimizer, as_noise=as_noise, 
                     num_classes=num_classes, lr=lr, checkpoint_name=checkpoint_name, devices=devices)
     if checkpoint_path:
         solver.load_model(checkpoint_path)

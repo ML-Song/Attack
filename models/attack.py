@@ -12,7 +12,7 @@ from utils import converter
 
 
 class AttackNet(nn.Module):
-    def __init__(self, backbone, out_channels=3, max_perturbation=128.):
+    def __init__(self, backbone, out_channels=3, max_perturbation=32.):
         super().__init__()
         self.backbone = backbone
         self.out_channels = out_channels
@@ -40,7 +40,7 @@ class Attack(object):
                  train_loader=None, test_loader=None, batch_size=None, gain=None, 
                  optimizer='sgd', lr=1e-3, patience=5, interval=1, weight=64, beta=8, 
                  img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', margin=0.5, 
-                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], num_classes=110):
+                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], num_classes=110, as_noise=True):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.lr = lr
@@ -58,6 +58,7 @@ class Attack(object):
         self.weight = weight
         self.margin = margin
         self.beta = beta
+        self.as_noise = as_noise
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -139,9 +140,15 @@ class Attack(object):
                     _, mask = self.gain.predict(img, return_tensor=True)
                     mask[mask >= 0.5] = 1
                     mask[mask < 0.5] = 0
-                    perturbated_img = perturbation * mask + img * (1 - mask)
+                    if self.as_noise:
+                        perturbated_img = perturbation * mask + img# * (1 - mask)
+                    else:
+                        perturbated_img = perturbation * mask + img * (1 - mask)
                 else:
-                    perturbated_img = perturbation
+                    if self.as_noise:
+                        perturbated_img = perturbation + img
+                    else:
+                        perturbated_img = perturbation
                 
                 cls = [c(perturbated_img) for c in self.classifier]
                 
@@ -176,7 +183,7 @@ class Attack(object):
                         
                     success_rate_mean = sum(success_rate) / len(success_rate)
                     perturbation_mean = sum(perturbation) / len(perturbation)
-                    score = (1 - success_rate_mean) * 64 + perturbation_mean
+                    score = (1 - success_rate_mean) * 64 + perturbation_mean * success_rate_mean
                     
                     writer.add_scalar(
                             'success_rate_mean', success_rate_mean, global_step=epoch)
@@ -219,9 +226,15 @@ class Attack(object):
                     _, mask = self.gain.predict(img, return_tensor=True)
                     mask[mask >= 0.5] = 1
                     mask[mask < 0.5] = 0
-                    perturbated_img = perturbation * mask + img * (1 - mask)
+                    if self.as_noise:
+                        perturbated_img = perturbation * mask + img# * (1 - mask)
+                    else:
+                        perturbated_img = perturbation * mask + img * (1 - mask)
                 else:
-                    perturbated_img = perturbation
+                    if self.as_noise:
+                        perturbated_img = perturbation + img
+                    else:
+                        perturbated_img = perturbation
 
                 perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
                 perturbated_img = converter.uint8_to_float32(perturbated_img_uint8)
@@ -283,9 +296,10 @@ class Attack(object):
         return perturbated_img_uint8
     
     def get_loss(self, preds, target, perturbated_img, img, targeted, max_perturbation=10):
-        delta = perturbated_img - img
-        delta = torch.sqrt(torch.clamp((delta ** 2).sum(dim=1), min=1e-6))
-        loss_perturbation = delta.mean()#F.mse_loss(perturbated_img, img)
+#         delta = perturbated_img - img
+#         delta = torch.sqrt(torch.clamp((delta ** 2).sum(dim=1), min=1e-6))
+#         loss_perturbation = delta.mean()
+        loss_perturbation = F.mse_loss(perturbated_img, img)
         if targeted:
             loss_cls = 0
             for out in preds:
