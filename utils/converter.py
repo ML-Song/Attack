@@ -5,7 +5,7 @@ import torch
 def float32_to_uint8(inputs):
     x = torch.clamp(inputs, min=-1, max=1)
     x = ((x * 0.5) + 0.5) * 255
-    x = torch.floor(x)
+    x = torch.round(x)
     return x
 
 

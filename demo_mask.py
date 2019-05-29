@@ -10,6 +10,8 @@ from torch import nn
 from PIL import Image
 import pretrainedmodels
 import torchvision as tv
+from skimage import feature
+from skimage.color import rgb2gray
 from matplotlib import pyplot as plt
 from skimage.segmentation import slic
 
@@ -32,8 +34,14 @@ def non_targeted_mask_attack(solver, original_image, original_label, test_model=
     
     img_np = np.asarray(original_image)
 #     img_mean = (img_np * original_mask).sum(axis=0, keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
-    masked_img = skimage.filters.gaussian(img_np, sigma=0.1, multichannel=True) * 255
+#     masked_img = skimage.filters.gaussian(img_np, sigma=0.5, multichannel=True) * 255
 #     masked_img = img_np * original_mask
+    masked_img = img_np * original_mask
+    edges = feature.canny(rgb2gray(masked_img), sigma=1)
+    edges = edges.reshape(299, 299, 1).repeat(3, -1)
+    edges_mean = masked_img.mean()
+    masked_img[edges] = edges_mean
+    masked_img = masked_img * original_mask
 #     segments = slic(masked_img, n_segments=600, compactness=10)
 #     for i in np.unique(segments):
 #         for c in range(3):
@@ -62,7 +70,7 @@ def targeted_mask_attack(solver, original_image, target_image,
 
     _, target_mask = solver.predict(
         [target_image], [target_label], out_size=(299, 299))
-    target_mask[target_mask >= 0.5] = 1
+    target_mask[target_mask >= 0.5] = 0.6
     target_mask[target_mask < 0.5] = 0
     target_mask = target_mask[0]
     for step in range(max_iter):
@@ -84,7 +92,7 @@ def targeted_mask_attack(solver, original_image, target_image,
             else:
                 _, original_mask = solver.predict(
                     [original_image], out_size=(299, 299))
-            original_mask[original_mask >= 0.5] = 1
+            original_mask[original_mask >= 0.5] = 0.4
             original_mask[original_mask < 0.5] = 0
             original_mask = original_mask[0]
 
@@ -153,7 +161,7 @@ if __name__ == '__main__':
                                            Image.fromarray(original_image), 
                                            Image.fromarray(t_m), label, target, black_box_model, max_iter)
                 if adv is not None:
-                    delta = np.asarray(adv) - original_image
+                    delta = (np.asarray(adv) - original_image).astype(np.float32)
                     norm = np.sqrt((delta ** 2).sum(-1)).mean()
                     if norm < best_norm:
                         tmp = adv
@@ -168,12 +176,11 @@ if __name__ == '__main__':
         for img, path in zip(result, data['image_path']):
             name = path.split('/')[-1]
             path = os.path.join(outputs_path, name)
-#             plt.imsave(path, np.asarray(img))
             img.save(path)
     if with_test:
         cls = black_box_model_test.predict(result)
         cls = cls.argmax(axis=1)
-        is_success = (targets == cls if targeted else targets != cls)
+        is_success = (targets == cls if targeted else labels != cls)
         result_np = np.array([np.asarray(i) for i in result])
         delta = (result_np - images).reshape(len(result_np), -1, 3).astype(np.float32)
         perturbation = np.sqrt((delta ** 2).sum(axis=-1)).mean(axis=-1)

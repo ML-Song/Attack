@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} weight: {} loss_mode: {} max_l2: {}'.format(targeted, weight, loss_mode, 64)
-    comment = 'Attack targeted: {} weight: {} loss_mode: {} max_l2: {}'.format(targeted, weight, loss_mode, 64)
+    checkpoint_name = 'Attack targeted: {} depth: {}'.format(targeted, depth)
+    comment = 'Attack targeted: {} depth: {}'.format(targeted, depth)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -59,17 +59,19 @@ if __name__ == '__main__':
     classifier = [ClassifierNet(i, num_classes) for i in model]
     for c, p in zip(classifier, classifier_path):
         c.load_state_dict(torch.load(p))
+        
+    model = [pretrainedmodels.__dict__[i](pretrained=None) for i in test_classifier_name]
+    test_classifier = [ClassifierNet(i, num_classes) for i in model]
+    for c, p in zip(test_classifier, test_classifier_path):
+        c.load_state_dict(torch.load(p))
 
-    unet = UNet(n_classes=2 * num_classes * 3)
+    unet = UNet(n_classes=num_classes * 3, depth=depth)
     attack_net = AttackNet(unet)
-    solver = Attack(attack_net, classifier, train_loader, test_loader, test_batch_size, num_classes=num_classes, 
-                    loss_mode=loss_mode, weight=weight, 
-                    lr=lr, checkpoint_name=checkpoint_name, devices=devices, optimizer=optimizer, targeted=targeted)
+    solver = Attack(attack_net, classifier, test_classifier, targeted, 
+                    train_loader, test_loader, test_batch_size, 
+                    num_classes=num_classes, lr=lr, checkpoint_name=checkpoint_name, devices=devices)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
     with SummaryWriter(comment=comment) as writer:
-        if targeted:
-#             solver.train(max_epoch, 'mask', writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
-            solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
-        else:
-            solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        solver.train(max_epoch, writer, epoch_size=math.ceil(num_classes * epoch_size / train_batch_size))
+        

@@ -12,36 +12,19 @@ from utils import converter
 
 
 class AttackNet(nn.Module):
-    def __init__(self, backbone, out_channels=3, max_perturbation=32., scale=10):
+    def __init__(self, backbone, out_channels=3, max_perturbation=32.):
         super().__init__()
         self.backbone = backbone
         self.out_channels = out_channels
         self.max_perturbation = max_perturbation
-        self.scale = scale
         
-    def forward(self, x, label, target):
+    def forward(self, x, target):
         n, c, h, w = x.shape
         out = self.backbone(x)
-        out = out.view(n, 2, -1, h, w)
-        
-        mask = out[:, 0]
-        perturbation = out[:, 1]
-        
-        mask = mask.view(n, -1, self.out_channels, h, w)
-        perturbation = perturbation.view(n, -1, self.out_channels, h, w)
-        
-        label_index = label.view(-1, 1, 1, 1, 1)
-        label_index = label_index.repeat(1, 1, self.out_channels, h, w)
+        perturbation = out.view(n, -1, self.out_channels, h, w)
         
         target_index = target.view(-1, 1, 1, 1, 1)
         target_index = target_index.repeat(1, 1, self.out_channels, h, w)
-
-        mask = mask.gather(1, label_index).squeeze(dim=1)
-        mask = torch.sigmoid(mask)
-#         mask_min = mask.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
-#         mask_max = mask.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
-#         mask = (mask - mask_min) / (mask_max - mask_min)
-#         mask = torch.sigmoid(self.scale * (mask - 0.5))
         
         perturbation = perturbation.gather(1, target_index).squeeze(dim=1)
 #         perturbation = perturbation / ((128 / self.max_perturbation) * torch.sqrt((perturbation ** 2).sum(dim=1, keepdim=True)))
@@ -49,14 +32,15 @@ class AttackNet(nn.Module):
         perturbation_max = perturbation.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
         perturbation = ((perturbation - perturbation_min) / (perturbation_max - perturbation_min) - 0.5) * 2
         perturbation = perturbation * (self.max_perturbation / 128)
-        return mask, perturbation
+        return perturbation
         
         
 class Attack(object):
-    def __init__(self, net, classifier=None, train_loader=None, test_loader=None, batch_size=None, gain=None, 
+    def __init__(self, net, classifier=None, test_classifier=None, targeted=True, 
+                 train_loader=None, test_loader=None, batch_size=None, gain=None, 
                  optimizer='sgd', lr=1e-3, patience=5, interval=1, weight=64, 
                  img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', margin=0.5, 
-                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], targeted=True, num_classes=110):
+                 checkpoint_dir='saved_models', checkpoint_name='', devices=[0], num_classes=110):
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.lr = lr
@@ -88,8 +72,14 @@ class Attack(object):
             
         self.net_single = net
         self.classifier_single = classifier
+        self.test_classifier_single = test_classifier
         if isinstance(classifier, list):
             for i in self.classifier_single:
+                i.eval()
+                i.volatile = True
+                
+        if isinstance(test_classifier, list):
+            for i in self.test_classifier_single:
                 i.eval()
                 i.volatile = True
 
@@ -99,11 +89,16 @@ class Attack(object):
             self.net = self.net_single.cuda()
             if isinstance(classifier, list):
                 self.classifier = [i.cuda() for i in self.classifier_single]
+            if isinstance(test_classifier, list):
+                self.test_classifier = [i.cuda() for i in self.test_classifier_single]
         else:
             self.net = nn.DataParallel(self.net_single, device_ids=range(len(devices))).cuda()
             if isinstance(classifier, list):
                 self.classifier = [nn.DataParallel(i, device_ids=range(len(devices))).cuda() for i in self.classifier_single]
-            
+            if isinstance(test_classifier, list):
+                self.test_classifier = [nn.DataParallel(i, device_ids=range(len(devices))).cuda() 
+                                        for i in self.test_classifier_single]
+        
         if gain is not None:
             self.gain = gain
             
@@ -119,7 +114,7 @@ class Attack(object):
     def reset_grad(self):
         self.opt.zero_grad()
         
-    def train(self, max_epoch, writer=None, epoch_size=10, mode='perturbation'):
+    def train(self, max_epoch, writer=None, epoch_size=10):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.opt, max_epoch * epoch_size)
         torch.cuda.manual_seed(1)
         best_score = 255
@@ -129,36 +124,23 @@ class Attack(object):
             for batch_idx, data in enumerate(self.train_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
-                if self.targeted and mode == 'perturbation':
+                if self.targeted:
                     if len(data) == 2:
                         target = torch.randint_like(label, 0, self.num_classes).cuda()
                     else:
                         target = data[2].cuda()
                 else:
-                    target = label
+                    target = None
 
                 self.reset_grad()
-                mask, perturbation = self.net(img, label, target)
-                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-                if self.targeted:
-                    if mode == 'mask':
-                        img_masked = img * mask + img_mean * (1 - mask)
-                        perturbated_img = img_masked
-                    else:
-                        img_masked = img# * mask + img_mean * (1 - mask)
-                        perturbated_img = img_masked + perturbation
-                else:
-                    perturbated_img = img + perturbation
-#                 if self.targeted:
-#                     perturbation = perturbation * mask
+                perturbation = self.net(img, target if self.targeted else label)
+                perturbated_img = img + perturbation
                 
                 cls = [c(perturbated_img) for c in self.classifier]
                 
                 loss_cls, loss_perturbation = self.get_loss(cls, target if self.targeted else label, 
-                                                            perturbated_img, img, self.targeted and mode == 'perturbation')
-                
+                                                            perturbated_img, img, self.targeted)
                 loss = loss_cls + loss_perturbation
-                
                 loss.backward()
                 self.opt.step()
                 scheduler.step(step)
@@ -177,7 +159,7 @@ class Attack(object):
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
-                acc, perturbation, imgs, perturbated_imgs = self.test(self.targeted, mode)
+                acc, perturbation, imgs, perturbated_imgs = self.test(self.targeted)
                 if writer:
                     for i, (a, p) in enumerate(zip(acc, perturbation)):
                         writer.add_scalar(
@@ -207,7 +189,7 @@ class Attack(object):
                     best_score = score
                     self.save_model(self.checkpoint_dir)
 
-    def test(self, targeted=False, mode='mask'):
+    def test(self, targeted=False):
         self.net.eval()
         with torch.no_grad():
             preds = []
@@ -218,7 +200,7 @@ class Attack(object):
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
-                if targeted and mode == 'perturbation':
+                if targeted:
                     if len(data) == 2:
                         target = torch.randint_like(label, 0, self.num_classes).cuda()
                     else:
@@ -228,24 +210,15 @@ class Attack(object):
                     target = label.cuda()
                     gt.append(label.cpu())
                     
-                mask, noise = self.net(img, label, target)
-                img_mean = img.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-                if targeted:
-                    if mode == 'mask':
-                        img_masked = img * mask + img_mean * (1 - mask)
-                        noise_img = img_masked
-                    else:
-                        img_masked = img * mask + img_mean * (1 - mask)
-                        noise_img = img_masked + noise
-                else:
-                    noise_img = img + noise
+                perturbation = self.net(img, target if targeted else label)
+                perturbated_img = img + perturbation
 
-                noise_img_uint8 = converter.float32_to_uint8(noise_img)
-                noise_img = converter.uint8_to_float32(noise_img_uint8)
+                perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
+                perturbated_img = converter.uint8_to_float32(perturbated_img_uint8)
                 
                 if batch_idx < 4:
                     imgs.append(img.cpu())
-                    noise_imgs.append(noise_img.cpu())
+                    perturbated_imgs.append(perturbated_img.cpu())
                 
                 img_uint8 = converter.float32_to_uint8(img)
 
@@ -254,10 +227,10 @@ class Attack(object):
                 perturbation = torch.sqrt((perturbation ** 2).sum(dim=1)).mean(dim=-1).mean(dim=-1)
                 perturbations.append(perturbation.detach().cpu())
                 
-                cls = [c(noise_img) for c in self.classifier]
+                cls = [c(noise_img) for c in self.test_classifier]
                 preds.append([c.argmax(dim=1).detach().cpu() for c in cls])
                 
-            preds = [torch.cat([p[i] for p in preds]).numpy() for i, c in enumerate(self.classifier)]
+            preds = [torch.cat([p[i] for p in preds]).numpy() for i, c in enumerate(self.test_classifier)]
             gt = torch.cat(gt).numpy()
             perturbations = torch.cat(perturbations).numpy()
             imgs = torch.cat(imgs)
@@ -282,7 +255,7 @@ class Attack(object):
     def predict(self, img, label, target):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         label_tensor = torch.tensor(label).cuda()
-        target_tensor = torch.tensor(target).cuda()
+        target_tensor = torch.tensor(target).cuda() if target is not None else None
         self.net.eval()
         with torch.no_grad():
             mask, noise = self.net(x, label_tensor, target_tensor)
@@ -303,7 +276,7 @@ class Attack(object):
             out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
             loss_cls_non_target = loss_cls_non_target + F.nll_loss(out_inverse, target)
 #         loss = (loss_cls_non_target + beta * loss_min_noise) / (1 + beta)
-        return loss_cls_non_target, 8 * loss_perturbation
+        return loss_cls_non_target, 16 * loss_perturbation
         
         
         
