@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 
 import pretrainedmodels
 from config_attack import *
-from models.unet import UNet
+from models.transformer_net import TransformerNet
 from models.attack import Attack, AttackNet
 from models.classifier import ClassifierNet
 from dataset import image_from_json, image_list_folder
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     for c, p in zip(test_classifier, test_classifier_path):
         c.load_state_dict(torch.load(p))
 
-    unet = UNet(n_classes=num_classes * 3, depth=depth)
+    unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, test_classifier, targeted, 
                     train_loader, test_loader, test_batch_size, 

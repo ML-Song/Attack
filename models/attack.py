@@ -196,7 +196,7 @@ class Attack(object):
             gt = []
             perturbations = []
             imgs = []
-            noise_imgs = []
+            perturbated_imgs = []
             for batch_idx, data in enumerate(self.test_loader):
                 img = data[0].cuda()
                 label = data[1].cuda()
@@ -222,26 +222,26 @@ class Attack(object):
                 
                 img_uint8 = converter.float32_to_uint8(img)
 
-                perturbation = noise_img_uint8 - img_uint8
+                perturbation = perturbated_img_uint8 - img_uint8
                 perturbation = F.interpolate(perturbation, self.img_size, mode='bilinear', align_corners=True)
                 perturbation = torch.sqrt((perturbation ** 2).sum(dim=1)).mean(dim=-1).mean(dim=-1)
                 perturbations.append(perturbation.detach().cpu())
                 
-                cls = [c(noise_img) for c in self.test_classifier]
+                cls = [c(perturbated_img) for c in self.test_classifier]
                 preds.append([c.argmax(dim=1).detach().cpu() for c in cls])
                 
             preds = [torch.cat([p[i] for p in preds]).numpy() for i, c in enumerate(self.test_classifier)]
             gt = torch.cat(gt).numpy()
             perturbations = torch.cat(perturbations).numpy()
             imgs = torch.cat(imgs)
-            noise_imgs = torch.cat(noise_imgs)
+            perturbated_imgs = torch.cat(perturbated_imgs)
             acc = [(gt == p).astype(np.float32).mean() for p in preds]
             
             if targeted and mode == 'perturbation':
                 perturbation = [perturbations[gt == p].sum() / len(perturbations) if (gt == p).sum() > 0 else 0 for p in preds]
             else:
                 perturbation = [perturbations[gt != p].sum() / len(perturbations) if (gt != p).sum() > 0 else 0 for p in preds]
-        return acc, perturbation, imgs, noise_imgs
+        return acc, perturbation, imgs, perturbated_imgs
 
     def save_model(self, checkpoint_dir, comment=None):
         if comment is None:
@@ -252,30 +252,26 @@ class Attack(object):
     def load_model(self, model_path):
         self.net_single.load_state_dict(torch.load(model_path))
     
-    def predict(self, img, label, target):
+    def predict(self, img, label):
         x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         label_tensor = torch.tensor(label).cuda()
-        target_tensor = torch.tensor(target).cuda() if target is not None else None
         self.net.eval()
         with torch.no_grad():
-            mask, noise = self.net(x, label_tensor, target_tensor)
-            img_mean = x.mean(dim=2, keepdim=True).mean(dim=3, keepdim=True)
-            img_masked = x * mask + img_mean * (1 - mask)
-            noise_img = img_masked + noise
-            noise_img_uint8 = converter.float32_to_uint8(noise_img)
-            noise_img_uint8 = noise_img_uint8.detach()
-            noise_img_uint8 = F.interpolate(noise_img_uint8, self.img_size, mode='bilinear', align_corners=True)
-            noise_img_uint8 = noise_img_uint8.cpu().numpy().astype(np.uint8)
-            noise_img_uint8 = np.transpose(noise_img_uint8, (0, 2, 3, 1))
-        return noise_img_uint8
+            perturbation = self.net(x, label)
+            perturbated_img = img + perturbation
+            perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
+            perturbated_img_uint8 = perturbated_img_uint8.detach()
+            perturbated_img_uint8 = F.interpolate(perturbated_img_uint8, self.img_size, mode='bilinear', align_corners=True)
+            perturbated_img_uint8 = perturbated_img_uint8.cpu().numpy().astype(np.uint8)
+            perturbated_img_uint8 = np.transpose(perturbated_img_uint8, (0, 2, 3, 1))
+        return perturbated_img_uint8
     
-    def get_loss(self, preds, target, noise_img, img, targeted, max_perturbation=10):
-        loss_perturbation = F.mse_loss(noise_img, img)
+    def get_loss(self, preds, target, perturbated_img, img, targeted, max_perturbation=10):
+        loss_perturbation = F.mse_loss(perturbated_img, img)
         loss_cls_non_target = 0
         for out in preds:
             out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
             loss_cls_non_target = loss_cls_non_target + F.nll_loss(out_inverse, target)
-#         loss = (loss_cls_non_target + beta * loss_min_noise) / (1 + beta)
         return loss_cls_non_target, 16 * loss_perturbation
         
         
