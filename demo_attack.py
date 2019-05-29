@@ -31,31 +31,30 @@ if __name__ == '__main__':
             data['target'].append(int(row['targetedLabel']))
             data['label'].append(int(row['trueLabel']))
             
-    model = [pretrainedmodels.__dict__[i](pretrained=None) for i in classifier_name]
-    classifier = [ClassifierNet(i, num_classes) for i in model]
-    for c, p in zip(classifier, classifier_path):
-        c.load_state_dict(torch.load(p))
+#     model = [pretrainedmodels.__dict__[i](pretrained=None) for i in classifier_name]
+#     classifier = [ClassifierNet(i, num_classes) for i in model]
+#     for c, p in zip(classifier, classifier_path):
+#         c.load_state_dict(torch.load(p))
         
-    model = [pretrainedmodels.__dict__[i](pretrained=None) for i in test_classifier_name]
-    test_classifier = [ClassifierNet(i, num_classes) for i in model]
-    for c, p in zip(test_classifier, test_classifier_path):
-        c.load_state_dict(torch.load(p))
-    if gain_model_name is not None:
-        if gain_model_name in pretrainedmodels.model_names:
-            backbone = pretrainedmodels.__dict__[gain_model_name](pretrained=None)
-            backbone = nn.Sequential(*list(backbone.children())[: -2])
-        else:
-            raise Exception('\nModel {} not exist'.format(model_name))
+#     model = [pretrainedmodels.__dict__[i](pretrained=None) for i in test_classifier_name]
+#     test_classifier = [ClassifierNet(i, num_classes) for i in model]
+#     for c, p in zip(test_classifier, test_classifier_path):
+#         c.load_state_dict(torch.load(p))
+#     if gain_model_name is not None:
+#         if gain_model_name in pretrainedmodels.model_names:
+#             backbone = pretrainedmodels.__dict__[gain_model_name](pretrained=None)
+#             backbone = nn.Sequential(*list(backbone.children())[: -2])
+#         else:
+#             raise Exception('\nModel {} not exist'.format(model_name))
 
-        gain = GAINSolver(backbone, num_classes, in_channels=in_channels, devices=devices)
-        gain.load_model(gain_checkpoint_path)
-    else:
-        gain = None
+#         gain = GAINSolver(backbone, num_classes, in_channels=in_channels, devices=devices)
+#         gain.load_model(gain_checkpoint_path)
+#     else:
+#         gain = None
     
     unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)
-    solver = Attack(attack_net, classifier, test_classifier, targeted, 
-                    gain=gain, num_classes=num_classes, as_noise=as_noise)
+    solver = Attack(attack_net, targeted=targeted, num_classes=num_classes, as_noise=as_noise)
     solver.load_model(checkpoint_path)
     images = [Image.open(i) for i in data['image_path']]
     labels = data['label']
