@@ -12,7 +12,7 @@ from utils import converter
 
 
 class AttackNet(nn.Module):
-    def __init__(self, backbone, out_channels=3, max_perturbation=32.):
+    def __init__(self, backbone, out_channels=3, max_perturbation=128.):
         super().__init__()
         self.backbone = backbone
         self.out_channels = out_channels
@@ -38,7 +38,7 @@ class AttackNet(nn.Module):
 class Attack(object):
     def __init__(self, net, classifier=None, test_classifier=None, targeted=True, 
                  train_loader=None, test_loader=None, batch_size=None, gain=None, 
-                 optimizer='sgd', lr=1e-3, patience=5, interval=1, weight=64, 
+                 optimizer='sgd', lr=1e-3, patience=5, interval=1, weight=64, beta=8, 
                  img_size=(299, 299), transfrom=None, loss_mode='cross_entropy', margin=0.5, 
                  checkpoint_dir='saved_models', checkpoint_name='', devices=[0], num_classes=110):
         self.train_loader = train_loader
@@ -57,6 +57,7 @@ class Attack(object):
         assert(self.loss_mode in ('margin', 'cross_entropy'))
         self.weight = weight
         self.margin = margin
+        self.beta = beta
         
         if transfrom is None:
             self.transfrom = tv.transforms.Compose([
@@ -134,7 +135,7 @@ class Attack(object):
 
                 self.reset_grad()
                 perturbation = self.net(img, target if self.targeted else label)
-                perturbated_img = img + perturbation
+                perturbated_img = perturbation#img + perturbation
                 
                 cls = [c(perturbated_img) for c in self.classifier]
                 
@@ -159,23 +160,20 @@ class Attack(object):
                 step += 1
             if epoch % self.interval == 0:
                 torch.cuda.empty_cache()
-                acc, perturbation, imgs, perturbated_imgs = self.test(self.targeted)
+                success_rate, perturbation, imgs, perturbated_imgs = self.test(self.targeted)
                 if writer:
-                    for i, (a, p) in enumerate(zip(acc, perturbation)):
+                    for i, (a, p) in enumerate(zip(success_rate, perturbation)):
                         writer.add_scalar(
-                            'acc_{}'.format(i), a, global_step=epoch)
+                            'success_rate_{}'.format(i), a, global_step=epoch)
                         writer.add_scalar(
                             'perturbation_{}'.format(i), p, global_step=epoch)
                         
-                    acc_mean = sum(acc) / len(acc)
+                    success_rate_mean = sum(success_rate) / len(success_rate)
                     perturbation_mean = sum(perturbation) / len(perturbation)
-                    if self.targeted and mode == 'perturbation':
-                        score = (1 - acc_mean) * 64 + perturbation_mean
-                    else:
-                        score = acc_mean * 64 + perturbation_mean
+                    score = (1 - success_rate_mean) * 64 + perturbation_mean
                     
                     writer.add_scalar(
-                            'acc_mean', acc_mean, global_step=epoch)
+                            'success_rate_mean', success_rate_mean, global_step=epoch)
                     writer.add_scalar(
                             'perturbation_mean', perturbation_mean, global_step=epoch)
                     writer.add_scalar(
@@ -211,7 +209,7 @@ class Attack(object):
                     gt.append(label.cpu())
                     
                 perturbation = self.net(img, target if targeted else label)
-                perturbated_img = img + perturbation
+                perturbated_img = perturbation#img + perturbation
 
                 perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
                 perturbated_img = converter.uint8_to_float32(perturbated_img_uint8)
@@ -235,13 +233,13 @@ class Attack(object):
             perturbations = torch.cat(perturbations).numpy()
             imgs = torch.cat(imgs)
             perturbated_imgs = torch.cat(perturbated_imgs)
-            acc = [(gt == p).astype(np.float32).mean() for p in preds]
+            success_rate = [(gt == p if targeted else gt != p).astype(np.float32).mean() for p in preds]
             
-            if targeted and mode == 'perturbation':
-                perturbation = [perturbations[gt == p].sum() / len(perturbations) if (gt == p).sum() > 0 else 0 for p in preds]
+            if targeted:
+                perturbation = [perturbations[gt == p].mean() if (gt == p).sum() > 0 else 0 for p in preds]
             else:
-                perturbation = [perturbations[gt != p].sum() / len(perturbations) if (gt != p).sum() > 0 else 0 for p in preds]
-        return acc, perturbation, imgs, perturbated_imgs
+                perturbation = [perturbations[gt != p].mean() if (gt != p).sum() > 0 else 0 for p in preds]
+        return success_rate, perturbation, imgs, perturbated_imgs
 
     def save_model(self, checkpoint_dir, comment=None):
         if comment is None:
@@ -268,11 +266,16 @@ class Attack(object):
     
     def get_loss(self, preds, target, perturbated_img, img, targeted, max_perturbation=10):
         loss_perturbation = F.mse_loss(perturbated_img, img)
-        loss_cls_non_target = 0
-        for out in preds:
-            out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
-            loss_cls_non_target = loss_cls_non_target + F.nll_loss(out_inverse, target)
-        return loss_cls_non_target, 16 * loss_perturbation
+        if targeted:
+            loss_cls = 0
+            for out in preds:
+                loss_cls = loss_cls + F.cross_entropy(out, target)
+        else:
+            loss_cls = 0
+            for out in preds:
+                out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
+                loss_cls = loss_cls + F.nll_loss(out_inverse, target)
+        return loss_cls, self.beta * loss_perturbation
         
         
         

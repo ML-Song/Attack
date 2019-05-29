@@ -1,7 +1,7 @@
 #coding=utf-8
 
-lr = 1e-1
-devices = [3]
+lr = 1e-2
+devices = [0]
 image_size = (224, 224)
 num_classes = 110
 epoch_size = 100
@@ -20,5 +20,5 @@ targeted = False
 checkpoint_path = None
 weight = 64
 loss_mode = ('margin', 'cross_entropy')[1]
+beta = 8
 
-depth = 4

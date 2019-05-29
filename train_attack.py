@@ -14,8 +14,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} depth: {}'.format(targeted, depth)
-    comment = 'Attack targeted: {} depth: {}'.format(targeted, depth)
+    checkpoint_name = 'Attack targeted: {} beta: {} optimizer: {}'.format(targeted, beta, optimizer)
+    comment = 'Attack targeted: {} beta: {} optimizer: {}'.format(targeted, beta, optimizer)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, test_classifier, targeted, 
-                    train_loader, test_loader, test_batch_size, 
+                    train_loader, test_loader, test_batch_size, beta=beta, optimizer=optimizer, 
                     num_classes=num_classes, lr=lr, checkpoint_name=checkpoint_name, devices=devices)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
