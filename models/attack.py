@@ -283,7 +283,9 @@ class Attack(object):
         return perturbated_img_uint8
     
     def get_loss(self, preds, target, perturbated_img, img, targeted, max_perturbation=10):
-        loss_perturbation = F.mse_loss(perturbated_img, img)
+        delta = perturbated_img - img
+        delta = torch.sqrt(torch.clamp((delta ** 2).sum(dim=1), min=1e-6))
+        loss_perturbation = delta.mean()#F.mse_loss(perturbated_img, img)
         if targeted:
             loss_cls = 0
             for out in preds:

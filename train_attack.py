@@ -16,8 +16,8 @@ from dataset import image_from_json, image_list_folder
 
 
 if __name__ == '__main__':
-    checkpoint_name = 'Attack targeted: {} beta: {} optimizer: {}'.format(targeted, beta, optimizer)
-    comment = 'Attack targeted: {} beta: {} optimizer: {}'.format(targeted, beta, optimizer)
+    checkpoint_name = 'Attack targeted: {} beta: {} with_gain: {}'.format(targeted, beta, gain_model_name is not None)
+    comment = 'Attack targeted: {} beta: {} with_gain: {}'.format(targeted, beta, gain_model_name is not None)
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(map(str, devices))
 
     mean_arr = [0.5, 0.5, 0.5]
@@ -66,15 +66,17 @@ if __name__ == '__main__':
     test_classifier = [ClassifierNet(i, num_classes) for i in model]
     for c, p in zip(test_classifier, test_classifier_path):
         c.load_state_dict(torch.load(p))
+    if gain_model_name is not None:
+        if gain_model_name in pretrainedmodels.model_names:
+            backbone = pretrainedmodels.__dict__[gain_model_name](pretrained=None)
+            backbone = nn.Sequential(*list(backbone.children())[: -2])
+        else:
+            raise Exception('\nModel {} not exist'.format(model_name))
 
-    if gain_model_name in pretrainedmodels.model_names:
-        backbone = pretrainedmodels.__dict__[gain_model_name](pretrained=None)
-        backbone = nn.Sequential(*list(backbone.children())[: -2])
+        gain = GAINSolver(backbone, num_classes, in_channels=in_channels)
+        gain.load_model(gain_checkpoint_path)
     else:
-        raise Exception('\nModel {} not exist'.format(model_name))
-        
-    gain = GAINSolver(backbone, num_classes, in_channels=in_channels)
-    gain.load_model(gain_checkpoint_path)
+        gain = None
     
     unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)

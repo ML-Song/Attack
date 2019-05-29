@@ -1,12 +1,12 @@
 #coding=utf-8
 
 lr = 1e-2
-devices = [2]
+devices = [0, 1]
 image_size = (224, 224)
 num_classes = 110
 epoch_size = 100
-train_batch_size = 26
-test_batch_size = 50
+train_batch_size = 50
+test_batch_size = 100
 max_epoch = 50
 classifier_name = ['inceptionv4']#, 'inceptionresnetv2']
 classifier_path = ['saved_models/best_model_Classifier model: {} optimizer: sgd.pt'.format(i) for i in classifier_name]
