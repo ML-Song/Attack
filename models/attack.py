@@ -135,7 +135,13 @@ class Attack(object):
 
                 self.reset_grad()
                 perturbation = self.net(img, target if self.targeted else label)
-                perturbated_img = perturbation#img + perturbation
+                if self.gain is not None:
+                    _, mask = self.gain.predict(img, return_tensor=True)
+                    mask[mask >= 0.5] = 1
+                    mask[mask < 0.5] = 0
+                    perturbated_img = perturbation * mask + img * (1 - mask)
+                else:
+                    perturbated_img = perturbation
                 
                 cls = [c(perturbated_img) for c in self.classifier]
                 
@@ -209,7 +215,13 @@ class Attack(object):
                     gt.append(label.cpu())
                     
                 perturbation = self.net(img, target if targeted else label)
-                perturbated_img = perturbation#img + perturbation
+                if self.gain is not None:
+                    _, mask = self.gain.predict(img, return_tensor=True)
+                    mask[mask >= 0.5] = 1
+                    mask[mask < 0.5] = 0
+                    perturbated_img = perturbation * mask + img * (1 - mask)
+                else:
+                    perturbated_img = perturbation
 
                 perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
                 perturbated_img = converter.uint8_to_float32(perturbated_img_uint8)
@@ -256,7 +268,13 @@ class Attack(object):
         self.net.eval()
         with torch.no_grad():
             perturbation = self.net(x, label)
-            perturbated_img = img + perturbation
+            if self.gain is not None:
+                _, mask = self.gain.predict(img, return_tensor=True)
+                mask[mask >= 0.5] = 1
+                mask[mask < 0.5] = 0
+                perturbated_img = perturbation * mask + img * (1 - mask)
+            else:
+                perturbated_img = perturbation
             perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
             perturbated_img_uint8 = perturbated_img_uint8.detach()
             perturbated_img_uint8 = F.interpolate(perturbated_img_uint8, self.img_size, mode='bilinear', align_corners=True)

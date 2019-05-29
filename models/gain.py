@@ -235,7 +235,7 @@ class GAINSolver(object):
     def load_model(self, model_path):
         self.net_single.load_state_dict(torch.load(model_path))
     
-    def predict(self, img, target=None, out_size=(299, 299)):
+    def predict(self, img, target=None, out_size=(299, 299), return_tensor=False):
         if isinstance(img, list):
             x = torch.cat([self.transfrom(i).unsqueeze(dim=0) for i in img], dim=0).cuda()
         elif isinstance(img, torch.Tensor):
@@ -250,11 +250,10 @@ class GAINSolver(object):
                 cls, gcam = self.net(x, with_gcam=True, target=target)
             cls = cls.detach().cpu().numpy()
 #             gcam = F.interpolate(gcam, out_size, mode='bilinear', align_corners=True)
-            mask = self._soft_mask(gcam).detach().cpu()
-            mask = F.interpolate(mask, out_size, mode='bilinear', align_corners=True)
-#             mask[mask < 0.5] = 0
-#             mask[mask >= 0.5] = 1
-            mask = mask.permute(0, 2, 3, 1).numpy()
+            mask = self._soft_mask(gcam).detach()
+            if not return_tensor:
+                mask = F.interpolate(mask, out_size, mode='bilinear', align_corners=True)
+                mask = mask.cpu().permute(0, 2, 3, 1).numpy()
         return cls, mask
     
     def _soft_mask(self, x, scale=10, threshold=0.5):

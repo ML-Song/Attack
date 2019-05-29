@@ -2,14 +2,16 @@
 import os
 import math
 import torch
+from torch import nn
 import torchvision as tv
 from tensorboardX import SummaryWriter
 
 import pretrainedmodels
 from config_attack import *
-from models.transformer_net import TransformerNet
+from models.gain import GAIN, GAINSolver
 from models.attack import Attack, AttackNet
 from models.classifier import ClassifierNet
+from models.transformer_net import TransformerNet
 from dataset import image_from_json, image_list_folder
 
 
@@ -65,10 +67,19 @@ if __name__ == '__main__':
     for c, p in zip(test_classifier, test_classifier_path):
         c.load_state_dict(torch.load(p))
 
+    if gain_model_name in pretrainedmodels.model_names:
+        backbone = pretrainedmodels.__dict__[gain_model_name](pretrained=None)
+        backbone = nn.Sequential(*list(backbone.children())[: -2])
+    else:
+        raise Exception('\nModel {} not exist'.format(model_name))
+        
+    gain = GAINSolver(backbone, num_classes, in_channels=in_channels)
+    gain.load_model(gain_checkpoint_path)
+    
     unet = TransformerNet(num_classes=num_classes * 3)
     attack_net = AttackNet(unet)
     solver = Attack(attack_net, classifier, test_classifier, targeted, 
-                    train_loader, test_loader, test_batch_size, beta=beta, optimizer=optimizer, 
+                    train_loader, test_loader, test_batch_size, gain=gain, beta=beta, optimizer=optimizer, 
                     num_classes=num_classes, lr=lr, checkpoint_name=checkpoint_name, devices=devices)
     if checkpoint_path:
         solver.load_model(checkpoint_path)
