@@ -103,6 +103,8 @@ class Attack(object):
         
         if gain is not None:
             self.gain = gain
+        else:
+            self.gain = None
             
         if optimizer == 'sgd':
             self.opt = torch.optim.SGD(
@@ -280,18 +282,25 @@ class Attack(object):
         label_tensor = torch.tensor(label).cuda()
         self.net.eval()
         with torch.no_grad():
-            perturbation = self.net(x, label)
+            perturbation = self.net(x, label_tensor)
             if self.gain is not None:
-                _, mask = self.gain.predict(img, return_tensor=True)
+                _, mask = self.gain.predict(x, return_tensor=True)
                 mask[mask >= 0.5] = 1
                 mask[mask < 0.5] = 0
-                perturbated_img = perturbation * mask + img * (1 - mask)
+                if self.as_noise:
+                    perturbated_img = perturbation * mask + x# * (1 - mask)
+                else:
+                    perturbated_img = perturbation * mask + x * (1 - mask)
             else:
-                perturbated_img = perturbation
+                if self.as_noise:
+                    perturbated_img = perturbation + x
+                else:
+                    perturbated_img = perturbation
             perturbated_img_uint8 = converter.float32_to_uint8(perturbated_img)
-            perturbated_img_uint8 = perturbated_img_uint8.detach()
+            print(perturbated_img_uint8.shape)
             perturbated_img_uint8 = F.interpolate(perturbated_img_uint8, self.img_size, mode='bilinear', align_corners=True)
-            perturbated_img_uint8 = perturbated_img_uint8.cpu().numpy().astype(np.uint8)
+            print(perturbated_img_uint8.shape)
+            perturbated_img_uint8 = perturbated_img_uint8.detach().cpu().numpy().astype(np.uint8)
             perturbated_img_uint8 = np.transpose(perturbated_img_uint8, (0, 2, 3, 1))
         return perturbated_img_uint8
     
@@ -307,9 +316,10 @@ class Attack(object):
         else:
             loss_cls = 0
             for out in preds:
-                out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
-                loss_cls = loss_cls + F.nll_loss(out_inverse, target)
-        return loss_cls, self.beta * loss_perturbation
+                loss_cls = loss_cls - F.cross_entropy(out, target)
+#                 out_inverse = torch.log(torch.clamp(1 - torch.softmax(out, dim=1), min=1e-6))
+#                 loss_cls = loss_cls + F.nll_loss(out_inverse, target)
+        return loss_cls / len(preds), self.beta * loss_perturbation
         
         
         
