@@ -4,11 +4,14 @@ import sys
 import csv
 import time
 import torch
+import skimage
 import numpy as np
 from torch import nn
 from PIL import Image
 import pretrainedmodels
 import torchvision as tv
+from matplotlib import pyplot as plt
+from skimage.segmentation import slic
 
 from config_mask import *
 from models.gain import GAIN, GAINSolver
@@ -28,8 +31,16 @@ def non_targeted_mask_attack(solver, original_image, original_label, test_model=
     original_mask = original_mask[0]
     
     img_np = np.asarray(original_image)
-    img_mean = (img_np * original_mask).sum(axis=0, keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
-    img_masked = img_np * (1 - original_mask) + img_mean * original_mask
+#     img_mean = (img_np * original_mask).sum(axis=0, keepdims=True).sum(axis=1, keepdims=True) / original_mask.sum()
+    masked_img = skimage.filters.gaussian(img_np, sigma=0.1, multichannel=True) * 255
+#     masked_img = img_np * original_mask
+#     segments = slic(masked_img, n_segments=600, compactness=10)
+#     for i in np.unique(segments):
+#         for c in range(3):
+#             masked_img_c = masked_img[:, :, c]
+#             masked_img_c[segments == i] = masked_img_c[segments == i].mean()
+
+    img_masked = img_np * (1 - original_mask) + masked_img * original_mask
     img_masked = np.round(img_masked)
     img_masked = Image.fromarray((img_masked).astype(np.uint8))
     if test_model is None:
@@ -133,7 +144,7 @@ if __name__ == '__main__':
     result = []
     for img, label, target in zip(images, labels, targets):
         original_image = img
-        target_image = images[labels == target]
+        target_image = images[labels == target].copy()
         if targeted:
             tmp = Image.fromarray(original_image)
             best_norm = 255
@@ -157,15 +168,15 @@ if __name__ == '__main__':
         for img, path in zip(result, data['image_path']):
             name = path.split('/')[-1]
             path = os.path.join(outputs_path, name)
+#             plt.imsave(path, np.asarray(img))
             img.save(path)
     if with_test:
         cls = black_box_model_test.predict(result)
         cls = cls.argmax(axis=1)
         is_success = (targets == cls if targeted else targets != cls)
-        result_np = np.array([np.asarray(i.resize(image_size)) for i in result])
-        delta = (result_np - images).reshape(len(result_np), -1, 3)
-        perturbation = np.sqrt((delta ** 2).sum(-1)).mean(-1)
-#         perturbation = np.sqrt(((result_np - images) ** 2).sum(-1)).mean(-1).mean(-1)
+        result_np = np.array([np.asarray(i) for i in result])
+        delta = (result_np - images).reshape(len(result_np), -1, 3).astype(np.float32)
+        perturbation = np.sqrt((delta ** 2).sum(axis=-1)).mean(axis=-1)
         perturbation[~is_success] = 0
         score = (1 - is_success.mean()) * 64 + perturbation.mean()
         print('success: {} perturbation: {} score: {}'.format(is_success.mean(), perturbation.sum() / is_success.sum(), score))
